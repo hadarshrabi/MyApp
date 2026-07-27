@@ -1,15 +1,16 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import StationMap from "./StationMap";
 
-type Stand = { id: number; name: string; address: string; stock: number; target: number; revenue: number; status: "פתוחה" | "דורשת טיפול" };
+export type Stand = { id: number; name: string; address: string; latitude: number; longitude: number; stock: number; target: number; revenue: number; status: "פתוחה" | "דורשת טיפול" };
 type Worker = { initials: string; name: string; stand: string; role: string; start: string; hours: string; rate: number; status: string; color: string };
 
 const initialStands: Stand[] = [
-  { id: 1, name: "עמדת עזריאלי", address: "דרך מנחם בגין 132, תל אביב", stock: 38, target: 45, revenue: 4260, status: "פתוחה" },
-  { id: 2, name: "עמדת שרונה", address: "אלוף קלמן מגן 3, תל אביב", stock: 12, target: 40, revenue: 3180, status: "דורשת טיפול" },
-  { id: 3, name: "עמדת דיזנגוף", address: "דיזנגוף 50, תל אביב", stock: 29, target: 35, revenue: 2840, status: "פתוחה" },
-  { id: 4, name: "עמדת רמת אביב", address: "איינשטיין 40, תל אביב", stock: 33, target: 40, revenue: 2560, status: "פתוחה" },
+  { id: 1, name: "עמדת עזריאלי", address: "דרך מנחם בגין 132, תל אביב", latitude: 32.0743, longitude: 34.7925, stock: 38, target: 45, revenue: 4260, status: "פתוחה" },
+  { id: 2, name: "עמדת שרונה", address: "אלוף קלמן מגן 3, תל אביב", latitude: 32.0717, longitude: 34.7876, stock: 12, target: 40, revenue: 3180, status: "דורשת טיפול" },
+  { id: 3, name: "עמדת דיזנגוף", address: "דיזנגוף 50, תל אביב", latitude: 32.0754, longitude: 34.7741, stock: 29, target: 35, revenue: 2840, status: "פתוחה" },
+  { id: 4, name: "עמדת רמת אביב", address: "איינשטיין 40, תל אביב", latitude: 32.1120, longitude: 34.7956, stock: 33, target: 40, revenue: 2560, status: "פתוחה" },
 ];
 
 const workers: Worker[] = [
@@ -140,10 +141,7 @@ export default function Home() {
 
   function MapScreen() {
     return <><PageIntro title="מפת עמדות" text="מיקום 17 העמדות, כתובות וניווט מהיר." action="נעיצת עמדה חדשה" />
-      <section className="map-layout"><div className="map-canvas" aria-label="מפה סכמטית של עמדות">
-        <div className="road one" /><div className="road two" /><div className="road three" />
-        {standList.map((s, i) => <button className={`map-pin pin-${i + 1}`} key={s.id} onClick={() => flash(`${s.name} נבחרה`)}>✿<span>{s.name.replace("עמדת ", "")}</span></button>)}
-      </div><aside className="map-list"><h3>עמדות באזור תל אביב</h3>{standList.map(s => <article key={s.id}><i>✿</i><div><b>{s.name}</b><small>{s.address}</small><span>{s.status}</span></div><button onClick={() => flash("הניווט נפתח")}>ניווט</button></article>)}</aside></section>
+      <StationMap stations={standList} onMessage={flash} />
     </>;
   }
 

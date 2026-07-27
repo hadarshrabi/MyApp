@@ -112,16 +112,20 @@ input:focus, select:focus { border-color: #7a9d8b; box-shadow: 0 0 0 3px #7a9d8b
 .bouquet-strip div { display: grid; gap: 3px; }.bouquet-strip b { font-size: 10px; }.bouquet-strip small { font-size: 9px; color: var(--muted); }.bouquet-strip strong { font-size: 11px; }
 .bouquet-strip button { grid-column: 2 / 4; border: 0; background: #eef3f0; color: var(--green); padding: 5px; border-radius: 5px; font-size: 9px; }
 .map-layout { display: grid; grid-template-columns: 1.55fr .85fr; gap: 16px; }
-.map-canvas { min-height: 560px; background: #e9eee9; border: 1px solid #dce3de; border-radius: 12px; position: relative; overflow: hidden; }
-.map-canvas::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 20% 20%, #d2e1d4 0 9%, transparent 10%), radial-gradient(circle at 76% 64%, #d8e4d6 0 12%, transparent 13%); opacity: .8; }
-.road { position: absolute; height: 34px; width: 120%; background: #fff; border: 1px solid #d9dfdc; transform-origin: center; }.road.one { top: 27%; right: -10%; transform: rotate(-12deg); }.road.two { top: 62%; right: -10%; transform: rotate(18deg); }.road.three { width: 34px; height: 120%; right: 53%; top: -10%; transform: rotate(6deg); }
-.map-pin { position: absolute; width: 38px; height: 38px; border: 3px solid #fff; box-shadow: 0 4px 12px #0002; border-radius: 50% 50% 50% 8px; transform: rotate(-45deg); background: var(--green); color: #fff; font-size: 17px; z-index: 2; }
-.map-pin > span { position: absolute; transform: rotate(45deg); background: #fff; color: var(--ink); padding: 5px 8px; border-radius: 5px; font-size: 9px; white-space: nowrap; right: 28px; top: 29px; border: 1px solid var(--line); }
-.pin-1 { top: 18%; right: 20%; }.pin-2 { top: 43%; right: 61%; }.pin-3 { top: 69%; right: 29%; }.pin-4 { top: 34%; right: 40%; }
-.map-list { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px; }.map-list h3 { margin: 0 0 12px; font-size: 14px; }
-.map-list article { display: grid; grid-template-columns: 30px 1fr auto; gap: 9px; border-top: 1px solid #edf0ee; padding: 14px 0; align-items: center; }.map-list article > i { font-style: normal; color: var(--green); }
-.map-list article div { display: grid; gap: 4px; }.map-list b { font-size: 11px; }.map-list small { color: var(--muted); font-size: 9px; }.map-list span { color: #4d8067; font-size: 9px; }
-.map-list button { border: 1px solid var(--line); background: #fff; color: var(--green); border-radius: 5px; padding: 5px 8px; font-size: 9px; }
+.real-map-shell { position: relative; min-width: 0; height: 560px; border: 1px solid #dce3de; border-radius: 12px; overflow: hidden; background: #e9eee9; }
+.real-map { width: 100%; height: 100%; z-index: 1; }.map-loading { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; background: #eef2ef; color: var(--green); font-weight: 700; }
+.locate-button { position: absolute; top: 14px; right: 14px; z-index: 500; border: 1px solid #d7ded9; background: #fff; color: var(--green-dark); border-radius: 8px; padding: 9px 12px; box-shadow: 0 3px 12px #0002; font-weight: 700; }
+.locate-button:disabled { opacity: .7; cursor: wait; }
+.station-marker-wrap { background: transparent; border: 0; }.station-marker { width: 40px; height: 40px; display: grid; place-items: center; background: var(--green); border: 3px solid #fff; color: #fff; border-radius: 50% 50% 50% 8px; transform: rotate(-45deg); box-shadow: 0 4px 13px #17291f55; font-size: 17px; }
+.station-marker::first-letter { transform: rotate(45deg); }.user-marker-wrap { background: transparent; border: 0; }.user-marker { display: block; width: 20px; height: 20px; background: #397dcc; border: 4px solid #fff; border-radius: 50%; box-shadow: 0 0 0 7px #397dcc40, 0 2px 7px #0004; }
+.leaflet-container { font-family: Arial, "Noto Sans Hebrew", sans-serif; }.leaflet-control-zoom { direction: ltr; }.leaflet-control-attribution { font-size: 9px; }
+.station-popup { display: grid; gap: 7px; text-align: right; min-width: 215px; color: var(--ink); }.station-popup > strong { color: var(--green-dark); font-size: 14px; }.station-popup > span { color: var(--muted); font-size: 11px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }.station-popup > div { font-size: 11px; }
+.popup-actions { display: flex; gap: 6px; padding-top: 5px; }.popup-actions a { flex: 1; text-align: center; text-decoration: none; border-radius: 5px; padding: 7px 5px; background: var(--green); color: #fff; font-size: 9px; font-weight: 700; }.popup-actions a:last-child { background: #eef3f0; color: var(--green-dark); }
+.map-list { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-y: auto; max-height: 560px; }
+.map-list-title { display: flex; justify-content: space-between; align-items: flex-start; padding: 2px 2px 12px; }.map-list-title h3 { margin: 0 0 5px; font-size: 14px; }.map-list-title p { margin: 0; color: var(--muted); font-size: 9px; }.map-list-title > span { color: #4d8067; font-size: 9px; }
+.station-list-item { width: 100%; display: grid; grid-template-columns: 30px 1fr auto; gap: 9px; border: 0; border-top: 1px solid #edf0ee; background: #fff; padding: 14px 2px; align-items: center; text-align: right; transition: .2s; }
+.station-list-item:hover { background: #f7faf8; padding-right: 7px; }.station-list-item > i { font-style: normal; color: var(--green); font-size: 17px; }
+.station-list-item div { display: grid; gap: 4px; }.station-list-item b { font-size: 11px; }.station-list-item small { color: var(--muted); font-size: 9px; }.station-list-item span { color: #4d8067; font-size: 9px; }.station-list-item > strong { color: var(--green); font-size: 9px; white-space: nowrap; }
 .permission-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 16px; }
 .role-card { padding: 20px; }.role-card > i { width: 38px; height: 38px; display: grid; place-items: center; background: #e8f0eb; color: var(--green); border-radius: 9px; font-style: normal; font-size: 20px; }
 .role-card h3 { margin: 14px 0 6px; font-size: 14px; }.role-card p { color: var(--muted); font-size: 11px; line-height: 1.6; min-height: 36px; }.role-card b { font-size: 10px; color: var(--green); }
@@ -165,6 +169,6 @@ input:focus, select:focus { border-color: #7a9d8b; box-shadow: 0 0 0 3px #7a9d8b
   .page-intro { align-items: flex-start; gap: 13px; }.page-intro .primary { white-space: nowrap; padding: 9px 11px; font-size: 11px; }
   .toolbar { overflow-x: auto; align-items: end; }.toolbar label { min-width: 170px; }
   .mini-stats, .permission-grid, .settings-grid, .bouquet-strip { grid-template-columns: 1fr; }
-  .map-layout { grid-template-columns: 1fr; }.map-canvas { min-height: 370px; }.map-list { max-height: 310px; overflow-y: auto; }
+  .map-layout { grid-template-columns: 1fr; }.real-map-shell { height: 390px; }.map-list { max-height: 310px; overflow-y: auto; }
   .bouquet-strip { padding: 0 12px 15px; }.settings-actions { grid-column: 1; }
 }
