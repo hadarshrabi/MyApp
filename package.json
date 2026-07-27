@@ -1,43 +1,38 @@
 {
   "name": "linoy-designs-management",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
+  "type": "module",
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
-    "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
-    "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "dev": "vite",
+    "build": "tsc -b && vite build && node scripts/prepare-sites-build.mjs",
+    "preview": "vite preview",
+    "test:routes": "node scripts/test-routes.mjs",
+    "cap:sync": "cap sync",
+    "cap:android": "cap add android",
+    "cap:ios": "cap add ios"
   },
   "dependencies": {
-    "@types/leaflet": "^1.9.21",
-    "drizzle-orm": "0.45.2",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/geolocation": "^8.0.0",
     "leaflet": "^1.9.4",
-    "next": "16.2.6",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "react-router-dom": "^7.9.6"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
-    "@tailwindcss/postcss": "4.2.1",
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.0.0",
+    "@capacitor/ios": "^8.4.2",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.26",
-    "drizzle-kit": "0.31.10",
-    "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
-    "react-server-dom-webpack": "19.2.6",
-    "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
-    "vinext": "0.0.50",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
-  },
-  "type": "module"
+    "vite": "8.0.13"
+  }
 }
