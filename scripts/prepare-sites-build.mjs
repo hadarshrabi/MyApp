@@ -1,18 +1,9 @@
-import { mkdir, copyFile, writeFile } from "node:fs/promises";
+import { mkdir, copyFile, cp } from "node:fs/promises";
 
 await mkdir("dist/server", { recursive: true });
 await mkdir("dist/.openai", { recursive: true });
 await copyFile(".openai/hosting.json", "dist/.openai/hosting.json");
-await writeFile("dist/server/index.js", `
-export default {
-  async fetch(request, env) {
-    const response = await env.ASSETS.fetch(request);
-    if (response.status !== 404) return response;
-    const url = new URL(request.url);
-    if (request.method === "GET" && !url.pathname.includes(".")) {
-      return env.ASSETS.fetch(new Request(new URL("/index.html", request.url), request));
-    }
-    return response;
-  }
-};
-`);
+await copyFile("server/worker.mjs", "dist/server/index.js");
+await copyFile("server/api-core.mjs", "dist/server/api-core.mjs");
+await copyFile("server/d1-repository.mjs", "dist/server/d1-repository.mjs");
+await cp("drizzle", "dist/.openai/drizzle", { recursive: true });

@@ -9,18 +9,25 @@ import { MapPage } from "./pages/MapPage";
 import { UsersPage } from "./pages/UsersPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
-import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AdminRoute } from "./components/ProtectedRoute";
+import { EmployeeHomePage } from "./pages/EmployeeHomePage";
+import { ProductsPage } from "./pages/ProductsPage";
+import { AuditPage } from "./pages/AuditPage";
+import { useAuth } from "./context/AuthContext";
 
 export default function App() {
+  const { isAdmin } = useAuth();
   return <BrowserRouter><Routes><Route element={<AppLayout />}>
-    <Route index element={<OverviewPage />} />
-    <Route path="employees" element={<ProtectedRoute permission="manage_employees"><EmployeesPage /></ProtectedRoute>} />
-    <Route path="attendance" element={<ProtectedRoute permission="clock_attendance"><AttendancePage /></ProtectedRoute>} />
-    <Route path="payroll" element={<ProtectedRoute permission="view_payroll"><PayrollPage /></ProtectedRoute>} />
-    <Route path="stations" element={<ProtectedRoute permission="manage_inventory"><StationsPage /></ProtectedRoute>} />
+    <Route index element={isAdmin ? <OverviewPage /> : <EmployeeHomePage />} />
+    <Route path="employees" element={<AdminRoute><EmployeesPage /></AdminRoute>} />
+    <Route path="attendance" element={<AdminRoute><AttendancePage /></AdminRoute>} />
+    <Route path="payroll" element={<AdminRoute><PayrollPage /></AdminRoute>} />
+    <Route path="stations" element={<AdminRoute><StationsPage /></AdminRoute>} />
+    <Route path="products" element={<AdminRoute><ProductsPage /></AdminRoute>} />
     <Route path="map" element={<MapPage />} />
-    <Route path="users" element={<ProtectedRoute permission="manage_users"><UsersPage /></ProtectedRoute>} />
-    <Route path="settings" element={<SettingsPage />} />
+    <Route path="users" element={<AdminRoute><UsersPage /></AdminRoute>} />
+    <Route path="audit" element={<AdminRoute><AuditPage /></AdminRoute>} />
+    <Route path="settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
     <Route path="*" element={<NotFoundPage />} />
   </Route></Routes></BrowserRouter>;
 }

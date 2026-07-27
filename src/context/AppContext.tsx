@@ -7,6 +7,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notice, setNotice] = useState("");
   const [modal, setModal] = useState("");
   const notify = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(""), 2500); };
+  const requiresReason = modal.includes("תיקון") || modal.includes("מלאי") || modal.includes("משמרת ידנית");
   return <AppContext.Provider value={{ notify, openModal: setModal }}>
     {notice && <div className="toast" role="status">✓ {notice}</div>}
     {modal && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={modal}>
@@ -15,6 +16,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         <h2>{modal}</h2><p>מלאו את הפרטים ושמרו את השינויים.</p>
         <label>שם<input required placeholder="הקלדת שם" /></label>
         <label>שיוך לעמדה<select><option>עזריאלי</option><option>שרונה</option><option>דיזנגוף</option><option>רמת אביב</option></select></label>
+        {requiresReason && <label>סיבה לשינוי<textarea required placeholder="חובה לציין מדוע נדרש השינוי" /></label>}
         <div><button type="button" className="secondary" onClick={() => setModal("")}>ביטול</button><button className="primary">שמירה</button></div>
       </form>
     </div>}

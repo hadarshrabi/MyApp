@@ -20,7 +20,7 @@ button { font: inherit; cursor: pointer; }
 .brand strong, .brand span { display: block; }
 .brand strong { font-size: 17px; }
 .brand span { color: var(--muted); font-size: 12px; margin-top: 3px; }
-nav { padding-top: 25px; display: grid; gap: 7px; }
+nav { padding-top: 25px; display: grid; gap: 5px; overflow-y: auto; }
 nav a { position: relative; border: 0; background: transparent; color: #646d69; text-align: right; text-decoration: none; padding: 12px 14px; border-radius: 9px; display: flex; gap: 13px; align-items: center; transition: .2s; }
 nav a > span { font-size: 20px; width: 22px; text-align: center; }
 nav a:hover { background: #f3f6f4; }
@@ -96,6 +96,7 @@ nav a em { margin-right: auto; background: #f3dcd9; color: #a05049; width: 21px;
 .toolbar { display: flex; align-items: end; gap: 12px; background: #fff; border: 1px solid var(--line); border-radius: 11px; padding: 14px 18px; margin-bottom: 16px; }
 label { display: grid; gap: 7px; font-size: 11px; color: #5f6965; font-weight: 700; }
 input, select { min-width: 170px; border: 1px solid #dfe4e1; background: #fff; color: var(--ink); border-radius: 7px; padding: 9px 11px; outline: 0; font: inherit; }
+textarea { width: 100%; min-height: 76px; resize: vertical; border: 1px solid #dfe4e1; background: #fff; color: var(--ink); border-radius: 7px; padding: 9px 11px; outline: 0; font: inherit; }
 input:focus, select:focus { border-color: #7a9d8b; box-shadow: 0 0 0 3px #7a9d8b18; }
 .secondary { border: 1px solid #dce2de; background: #fff; color: var(--green-dark); border-radius: 7px; padding: 9px 14px; font-weight: 700; }
 .data-table { overflow-x: auto; }.data-head, .data-row { display: grid; gap: 14px; align-items: center; min-width: 680px; }
@@ -140,6 +141,20 @@ input:focus, select:focus { border-color: #7a9d8b; box-shadow: 0 0 0 3px #7a9d8b
 .attendance-clock > div { display: flex; align-items: center; gap: 12px; }.attendance-clock > div div { display: grid; gap: 4px; }.attendance-clock small { color: #dce9e1; font-size: 10px; }
 .attendance-clock button { border: 0; background: #fff; color: var(--green-dark); border-radius: 7px; padding: 9px 15px; font-weight: 700; }.attendance-clock button:disabled { opacity: .7; }
 .empty-page { min-height: 60vh; display: grid; place-content: center; text-align: center; justify-items: center; }.empty-page h2 { margin: 0 0 8px; }.empty-page p { color: var(--muted); }.empty-page a { text-decoration: none; width: max-content; }
+.audit-note { background: #f5f0e8; color: #805f3f; border: 1px solid #eadcc9; padding: 12px 15px; border-radius: 8px; font-size: 11px; }
+.two-roles { grid-template-columns: repeat(2, 1fr); }
+.employee-app { min-height: 100vh; background: #f4f7f5; padding: 0 0 88px; }
+.employee-home { width: min(700px, 100%); margin: 0 auto; padding: 20px; display: grid; gap: 15px; }
+.employee-welcome { background: linear-gradient(135deg, #355544, #557764); color: #fff; border-radius: 0 0 22px 22px; margin: -20px -20px 0; padding: max(25px, env(safe-area-inset-top)) 22px 25px; display: flex; justify-content: space-between; align-items: center; }
+.employee-welcome span { font-size: 12px; color: #dfeae3; }.employee-welcome h1 { margin: 6px 0 5px; font-size: 24px; }.employee-welcome p { margin: 0; color: #dfeae3; font-size: 11px; }.employee-welcome > i { width: 55px; height: 55px; display: grid; place-items: center; background: #ffffff18; border-radius: 50%; font-size: 26px; font-style: normal; }
+.employee-shift { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 14px; box-shadow: 0 5px 20px #2742340a; }.employee-shift.active { border-color: #9db9a8; }
+.shift-status { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: center; }.shift-status > div { display: grid; gap: 4px; }.shift-status small { color: var(--muted); font-size: 9px; }.shift-status b { font-size: 13px; }
+.employee-shift > button { width: 100%; border: 0; border-radius: 11px; padding: 17px; background: var(--green); color: #fff; font-size: 20px; font-weight: 800; box-shadow: 0 6px 18px #456b5830; }.employee-shift.active > button { background: #a95850; }.employee-shift > p { text-align: center; margin: -3px 0 0; color: var(--muted); font-size: 10px; }
+.employee-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 17px; }.employee-card-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 12px; }.employee-card-head h2 { margin: 0 0 4px; font-size: 15px; }.employee-card-head p { margin: 0; color: var(--muted); font-size: 9px; }.employee-card-head .primary { font-size: 11px; white-space: nowrap; }
+.employee-inventory article { display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center; border-top: 1px solid #eff1ef; padding: 12px 0; }.employee-inventory i { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 9px; background: #f3e4e5; color: #95656b; font-style: normal; }.employee-inventory div { display: grid; gap: 4px; }.employee-inventory b { font-size: 11px; }.employee-inventory small { color: var(--muted); font-size: 9px; }.employee-inventory strong { color: var(--green); font-size: 20px; }.employee-inventory strong small { font-size: 9px; }
+.recent-shifts article { display: grid; grid-template-columns: 1fr auto auto; gap: 14px; align-items: center; border-top: 1px solid #eff1ef; padding: 13px 0; font-size: 10px; }.recent-shifts article > div { display: grid; gap: 4px; }.recent-shifts small { color: var(--muted); }.recent-shifts span { color: var(--muted); }.recent-shifts strong { color: var(--green); }
+.employee-nav { position: fixed; z-index: 20; inset: auto 0 0; height: calc(68px + env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid var(--line); display: flex; justify-content: center; padding: 6px 12px max(6px, env(safe-area-inset-bottom)); overflow: visible; }
+.employee-nav a { width: 100px; justify-content: center; flex-direction: column; gap: 2px; padding: 4px; font-size: 10px; text-align: center; }.employee-nav a > span { height: 24px; font-size: 19px; }
 
 @media (max-width: 1050px) {
   .stats { grid-template-columns: repeat(2, 1fr); }
@@ -176,6 +191,7 @@ input:focus, select:focus { border-color: #7a9d8b; box-shadow: 0 0 0 3px #7a9d8b
   .map-layout { grid-template-columns: 1fr; }.real-map-shell { height: 390px; }.map-list { max-height: 310px; overflow-y: auto; }
   .bouquet-strip { padding: 0 12px 15px; }.settings-actions { grid-column: 1; }
   .attendance-clock { position: sticky; top: 6px; z-index: 5; }.attendance-clock small { max-width: 190px; }.attendance-clock button { white-space: nowrap; }
+  .two-roles { grid-template-columns: 1fr; }
 }
 
 @supports (padding: max(0px)) {

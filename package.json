@@ -11,6 +11,8 @@
     "build": "tsc -b && vite build && node scripts/prepare-sites-build.mjs",
     "preview": "vite preview",
     "test:routes": "node scripts/test-routes.mjs",
+    "test:api": "node --test tests/api-permissions.test.mjs",
+    "test": "npm run build && npm run test:routes && npm run test:api",
     "cap:sync": "cap sync",
     "cap:android": "cap add android",
     "cap:ios": "cap add ios"

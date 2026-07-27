@@ -1,5 +1,10 @@
-export type UserRole = "admin" | "manager" | "employee";
-export type Permission = "view_payroll" | "manage_employees" | "manage_inventory" | "manage_users" | "clock_attendance";
+export type UserRole = "ADMIN" | "EMPLOYEE";
+export type Permission =
+  | "ADMIN_FULL_ACCESS"
+  | "CLOCK_ATTENDANCE"
+  | "VIEW_OWN_ATTENDANCE"
+  | "REPORT_SALE"
+  | "VIEW_ASSIGNED_INVENTORY";
 
 export type Station = {
   id: number;
@@ -31,11 +36,13 @@ export type AttendanceRecord = {
   id: string;
   employeeId: string;
   stationId: number;
-  action: "כניסה" | "יציאה";
+  action: "CLOCK_IN" | "CLOCK_OUT";
   latitude: number;
   longitude: number;
   distanceMeters: number;
   timestamp: string;
+  gpsAccuracy?: number | null;
+  deviceInfo?: string | null;
   approved: boolean;
 };
 
@@ -43,5 +50,8 @@ export type CurrentUser = {
   id: string;
   name: string;
   role: UserRole;
+  employeeId?: string;
+  stationId?: number;
+  jobPosition?: string;
   permissions: Permission[];
 };

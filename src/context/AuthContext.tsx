@@ -1,18 +1,26 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import type { CurrentUser, Permission } from "../types/models";
+import type { CurrentUser, Permission, UserRole } from "../types/models";
 
-const demoUser: CurrentUser = {
-  id: "user-1",
-  name: "לינוי רז",
-  role: "admin",
-  permissions: ["view_payroll", "manage_employees", "manage_inventory", "manage_users", "clock_attendance"],
-};
+const adminPermissions: Permission[] = ["ADMIN_FULL_ACCESS", "CLOCK_ATTENDANCE", "VIEW_OWN_ATTENDANCE", "REPORT_SALE", "VIEW_ASSIGNED_INVENTORY"];
+const employeePermissions: Permission[] = ["CLOCK_ATTENDANCE", "VIEW_OWN_ATTENDANCE", "REPORT_SALE", "VIEW_ASSIGNED_INVENTORY"];
 
-type AuthValue = { user: CurrentUser; can: (permission: Permission) => boolean };
+function demoUser(role: UserRole): CurrentUser {
+  return role === "ADMIN"
+    ? { id: "user-admin", name: "לינוי רז", role, permissions: adminPermissions }
+    : { id: "user-employee-1", employeeId: "emp-1", stationId: 1, name: "מיה אדרי", role, jobPosition: "מוכרת", permissions: employeePermissions };
+}
+
+type AuthValue = { user: CurrentUser; isAdmin: boolean; can: (permission: Permission) => boolean };
 const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const value = useMemo(() => ({ user: demoUser, can: (permission: Permission) => demoUser.permissions.includes(permission) }), []);
+  const role: UserRole = new URLSearchParams(window.location.search).get("demoRole") === "employee" ? "EMPLOYEE" : "ADMIN";
+  const user = useMemo(() => demoUser(role), [role]);
+  const value = useMemo(() => ({
+    user,
+    isAdmin: user.role === "ADMIN",
+    can: (permission: Permission) => user.role === "ADMIN" || user.permissions.includes(permission),
+  }), [user]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

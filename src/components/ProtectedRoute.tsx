@@ -7,3 +7,8 @@ export function ProtectedRoute({ permission, children }: { permission: Permissio
   const { can } = useAuth();
   return can(permission) ? children : <Navigate to="/" replace />;
 }
+
+export function AdminRoute({ children }: { children: ReactNode }) {
+  const { isAdmin } = useAuth();
+  return isAdmin ? children : <Navigate to="/" replace />;
+}

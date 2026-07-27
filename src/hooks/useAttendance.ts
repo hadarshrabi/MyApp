@@ -4,9 +4,9 @@ import type { Station } from "../types/models";
 
 export function useAttendance() {
   const [loading, setLoading] = useState(false);
-  async function clock(employeeId: string, station: Station, action: "כניסה" | "יציאה") {
+  async function clock(station: Station, action: "CLOCK_IN" | "CLOCK_OUT") {
     setLoading(true);
-    try { return await attendanceService.clock(employeeId, station, action); }
+    try { return await attendanceService.clock(station, action); }
     finally { setLoading(false); }
   }
   return { clock, loading };
