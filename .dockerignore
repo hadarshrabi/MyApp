@@ -1,0 +1,12 @@
+node_modules
+.npm-cache
+dist
+.git
+.env
+.env.*
+coverage
+*.log
+*.dump
+*.sql.gz
+work
+.openai

@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-linoy_designs}
+      POSTGRES_USER: ${POSTGRES_USER:-linoy_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - linoy_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    restart: unless-stopped
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-linoy_app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-linoy_designs}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in .env}
+      JWT_ISSUER: ${JWT_ISSUER:-linoy-designs-api}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-linoy-designs-app}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      APP_ORIGIN: http://localhost:${APP_PORT:-3001}
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3001
+      SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
+    ports:
+      - "127.0.0.1:${APP_PORT:-3001}:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  migration:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migration
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-linoy_app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-linoy_designs}?schema=public
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_EMPLOYEE_PASSWORD: ${SEED_EMPLOYEE_PASSWORD:-}
+      SEED_STATION_NAME: ${SEED_STATION_NAME:-Development station}
+      SEED_STATION_ADDRESS: ${SEED_STATION_ADDRESS:-}
+      SEED_STATION_DESCRIPTION: ${SEED_STATION_DESCRIPTION:-Local Docker development}
+      SEED_STATION_LATITUDE: ${SEED_STATION_LATITUDE:-}
+      SEED_STATION_LONGITUDE: ${SEED_STATION_LONGITUDE:-}
+
+volumes:
+  linoy_postgres_data:
