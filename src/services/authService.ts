@@ -1,13 +1,17 @@
-import type { CurrentUser } from "../types/models";
-
-const demoAdmin: CurrentUser = {
-  id: "user-1",
-  name: "לינוי רז",
-  role: "ADMIN",
-  permissions: ["ADMIN_FULL_ACCESS", "CLOCK_ATTENDANCE", "VIEW_OWN_ATTENDANCE", "REPORT_SALE", "VIEW_ASSIGNED_INVENTORY"],
-};
+import { apiClient, setAccessToken, type ApiUser } from "./apiClient";
 
 export const authService = {
-  async currentUser(): Promise<CurrentUser> { return demoAdmin; },
-  async signOut(): Promise<void> { return; },
+  async login(email: string, password: string) {
+    const payload = await apiClient.post<{ accessToken: string; user: ApiUser }>("/api/auth/login", { email, password });
+    setAccessToken(payload.accessToken);
+    return payload.user;
+  },
+  async restore() {
+    const payload = await apiClient.restoreSession();
+    return payload?.user ?? null;
+  },
+  async signOut() {
+    try { await apiClient.post<void>("/api/auth/logout", {}); }
+    finally { setAccessToken(null); }
+  },
 };

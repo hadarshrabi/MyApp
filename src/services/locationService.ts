@@ -1,9 +1,14 @@
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
+import { apiClient } from "./apiClient";
 
 export type Coordinates = { latitude: number; longitude: number; accuracy?: number };
+export type GeocodeResult = { latitude: number; longitude: number; label: string };
 
 export const locationService = {
+  async searchPlaces(query: string): Promise<GeocodeResult[]> {
+    return (await apiClient.get<{ results: GeocodeResult[] }>(`/api/geocode?q=${encodeURIComponent(query.trim())}`)).results;
+  },
   async getCurrentPosition(): Promise<Coordinates> {
     if (Capacitor.isNativePlatform()) {
       const permission = await Geolocation.requestPermissions();
