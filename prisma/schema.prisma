@@ -1,0 +1,237 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  EMPLOYEE
+}
+
+enum AttendanceAction {
+  CLOCK_IN
+  CLOCK_OUT
+}
+
+enum AttendanceReviewStatus {
+  NONE
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum InventoryTransactionType {
+  SALE
+  INITIAL_COUNT
+  STOCK_DELIVERY
+  DAMAGED_REMOVAL
+  MANUAL_ADJUSTMENT
+}
+
+enum AuditEntityType {
+  ATTENDANCE
+  INVENTORY
+  USER
+  PRODUCT
+  EMPLOYEE
+  STATION
+}
+
+model User {
+  id               String                 @id @default(uuid())
+  email            String                 @unique
+  displayName      String
+  passwordHash     String?
+  systemRole       UserRole
+  active           Boolean                @default(true)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  employee         Employee?
+  refreshTokens    RefreshToken[]
+  adminAuditLogs   AuditLog[]             @relation("AdminAuditLogs")
+  approvedRecords  AttendanceRecord[]     @relation("ApprovedAttendance")
+  reviewedRecords  AttendanceRecord[]     @relation("ReviewedAttendance")
+  inventoryActions InventoryTransaction[] @relation("AdminInventoryActions")
+}
+
+model Employee {
+  id                    String                 @id @default(uuid())
+  userId                String                 @unique
+  jobPosition           String
+  hourlyRateCents       Int                    @default(0)
+  assignedStationId     Int?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assignedStation       Station?               @relation(fields: [assignedStationId], references: [id], onDelete: SetNull)
+  attendanceRecords     AttendanceRecord[]
+  sales                 Sale[]
+  inventoryTransactions InventoryTransaction[] @relation("EmployeeInventoryActions")
+}
+
+model Station {
+  id                    Int                    @id @default(autoincrement())
+  name                  String
+  address               String
+  locationDescription   String?
+  latitude              Float
+  longitude             Float
+  allowedRadiusMeters   Int                    @default(150)
+  active                Boolean                @default(true)
+  startDate             DateTime?
+  endDate               DateTime?
+  internalNotes         String?
+  archivedAt            DateTime?
+  archivedByAdminId     String?
+  archiveReason         String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  employees             Employee[]
+  attendanceRecords     AttendanceRecord[]
+  inventory             StationInventory[]
+  sales                 Sale[]
+  inventoryTransactions InventoryTransaction[]
+
+  @@index([archivedAt, active])
+}
+
+model Product {
+  id                    String                 @id @default(uuid())
+  name                  String
+  currentPriceCents     Int
+  active                Boolean                @default(true)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  stationInventory      StationInventory[]
+  sales                 Sale[]
+  inventoryTransactions InventoryTransaction[]
+}
+
+model StationInventory {
+  stationId Int
+  productId String
+  quantity  Int
+  active    Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+  version   Int      @default(0)
+  station   Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@id([stationId, productId])
+  @@index([productId])
+}
+
+model AttendanceRecord {
+  id                String           @id @default(uuid())
+  employeeId        String
+  stationId         Int
+  action            AttendanceAction
+  serverTimestamp   DateTime         @default(now())
+  latitude          Float
+  longitude         Float
+  gpsAccuracy       Float?
+  distanceMeters    Float
+  deviceInfo        String?
+  exceptional       Boolean          @default(false)
+  exceptionStatus   AttendanceReviewStatus @default(NONE)
+  reviewedByAdminId String?
+  reviewedAt        DateTime?
+  reviewReason      String?
+  approvedByAdminId String?
+  createdAt         DateTime         @default(now())
+  employee          Employee         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  station           Station          @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  approvedByAdmin   User?            @relation("ApprovedAttendance", fields: [approvedByAdminId], references: [id], onDelete: SetNull)
+  reviewedByAdmin   User?            @relation("ReviewedAttendance", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, serverTimestamp])
+  @@index([stationId, serverTimestamp])
+  @@index([exceptionStatus, serverTimestamp])
+}
+
+model Sale {
+  id                        String                @id @default(uuid())
+  employeeId                String
+  stationId                 Int
+  productId                 String
+  quantity                  Int
+  unitPriceCents            Int
+  totalAmountCents          Int
+  serverTimestamp           DateTime              @default(now())
+  previousInventoryQuantity Int
+  newInventoryQuantity      Int
+  paymentType               String?
+  employee                  Employee              @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  station                   Station               @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  product                   Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  inventoryTransaction      InventoryTransaction?
+
+  @@index([stationId, serverTimestamp])
+  @@index([employeeId, serverTimestamp])
+}
+
+model InventoryTransaction {
+  id               String                   @id @default(uuid())
+  stationId        Int
+  productId        String
+  transactionType  InventoryTransactionType
+  quantityDelta    Int
+  previousQuantity Int
+  newQuantity      Int
+  employeeId       String?
+  adminUserId      String?
+  saleId           String?                  @unique
+  reason           String?
+  serverTimestamp  DateTime                 @default(now())
+  station          Station                  @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  product          Product                  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  employee         Employee?                @relation("EmployeeInventoryActions", fields: [employeeId], references: [id], onDelete: SetNull)
+  adminUser        User?                    @relation("AdminInventoryActions", fields: [adminUserId], references: [id], onDelete: SetNull)
+  sale             Sale?                    @relation(fields: [saleId], references: [id], onDelete: SetNull)
+
+  @@index([stationId, productId, serverTimestamp])
+}
+
+model AuditLog {
+  id              String          @id @default(uuid())
+  entityType      AuditEntityType
+  entityId        String
+  fieldName       String
+  originalValue   Json?
+  newValue        Json?
+  adminUserId     String
+  reason          String
+  serverTimestamp DateTime        @default(now())
+  adminUser       User            @relation("AdminAuditLogs", fields: [adminUserId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, serverTimestamp])
+  @@index([adminUserId, serverTimestamp])
+}
+
+model RefreshToken {
+  id                String    @id @default(uuid())
+  userId            String
+  tokenHash         String    @unique
+  familyId          String
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  replacedByTokenId String?
+  createdAt         DateTime  @default(now())
+  userAgent         String?
+  ipAddress         String?
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, familyId])
+  @@index([expiresAt])
+}
+
+model RateLimitBucket {
+  key          String    @id
+  windowStart  DateTime
+  attempts     Int       @default(0)
+  blockedUntil DateTime?
+  updatedAt    DateTime  @updatedAt
+}

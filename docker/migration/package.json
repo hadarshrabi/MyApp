@@ -1,0 +1,17 @@
+{
+  "name": "linoy-designs-migration",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.9.1",
+    "@prisma/client": "7.9.1",
+    "bcryptjs": "3.0.3",
+    "dotenv": "17.4.2",
+    "pg": "8.22.0",
+    "prisma": "7.9.1"
+  }
+}

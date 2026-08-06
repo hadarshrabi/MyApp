@@ -1,10 +1,18 @@
 import { DataTable } from "../components/DataTable";
 import { PageIntro } from "../components/PageIntro";
+import { useBusinessData } from "../context/BusinessDataContext";
+
+function display(value: unknown) {
+  if (value === null || value === undefined) return "—";
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
 
 export function AuditPage() {
-  return <><PageIntro title="היסטוריית ביקורת" text="תיעוד מלא של שינויים ידניים בנוכחות ובמלאי." /><section className="panel"><DataTable headers={["זמן", "מנהל", "סוג רשומה", "שדה", "ערך מקורי", "ערך חדש", "סיבה"]} rows={[
-    ["27.07.2026 · 12:04", "לינוי רז", "נוכחות", "שעת יציאה", "15:20", "15:35", "אישור טעות בדיווח"],
-    ["27.07.2026 · 09:10", "לינוי רז", "מלאי", "זר ורדים לבנים", "18", "20", "ספירה פיזית בעמדה"],
-    ["26.07.2026 · 17:45", "לינוי רז", "נוכחות", "עמדה", "שרונה", "עזריאלי", "העברה שאושרה מראש"],
-  ]} /></section></>;
+  const { audits } = useBusinessData();
+  return <><PageIntro title="היסטוריית ביקורת" text="תיעוד מלא ובלתי ניתן להסתרה של שינויים ידניים רגישים." />
+    <section className="panel"><DataTable headers={["זמן", "מנהל", "סוג רשומה", "שדה", "ערך מקורי", "ערך חדש", "סיבה"]} rows={audits.map(item => [
+      new Date(item.serverTimestamp).toLocaleString("he-IL"), item.adminUser.displayName, item.entityType, item.fieldName,
+      display(item.originalValue), display(item.newValue), item.reason,
+    ])} /></section>
+  </>;
 }

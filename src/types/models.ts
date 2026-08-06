@@ -10,8 +10,18 @@ export type Station = {
   id: number;
   name: string;
   address: string;
+  locationDescription?: string | null;
   latitude: number;
   longitude: number;
+  allowedRadiusMeters: number;
+  active: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
+  internalNotes?: string | null;
+  archivedAt?: string | null;
+  archivedByAdminId?: string | null;
+  archiveReason?: string | null;
+  inventory?: Array<{ id: string; name: string; price: number; quantity: number; active: boolean }>;
   stock: number;
   target: number;
   revenue: number;
@@ -48,6 +58,7 @@ export type AttendanceRecord = {
 
 export type CurrentUser = {
   id: string;
+  email: string;
   name: string;
   role: UserRole;
   employeeId?: string;

@@ -1,7 +1,10 @@
-import { employees } from "../data/mockData";
-import type { Employee } from "../types/models";
+import { apiClient } from "./apiClient";
 
 export const employeeService = {
-  async list(): Promise<Employee[]> { return structuredClone(employees); },
-  async get(id: string): Promise<Employee | undefined> { return employees.find(item => item.id === id); },
+  assignStation(employeeId: string, stationId: number | null) {
+    return apiClient.patch(`/api/admin/employees/${encodeURIComponent(employeeId)}/station`, {
+      stationId,
+      reason: stationId === null ? "הסרת שיוך עובד מעמדה" : "שינוי שיוך עובד לעמדה",
+    });
+  },
 };
