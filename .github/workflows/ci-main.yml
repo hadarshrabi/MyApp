@@ -1,0 +1,21 @@
+name: CI - Main
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-main
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/_ci-reusable.yml
+    with:
+      write_docker_cache: true
+    permissions:
+      contents: read

@@ -1,0 +1,21 @@
+name: CI - Pull Request
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: ./.github/workflows/_ci-reusable.yml
+    with:
+      write_docker_cache: false
+    permissions:
+      contents: read
