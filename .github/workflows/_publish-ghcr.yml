@@ -1,0 +1,404 @@
+name: Reusable GHCR Publish
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  APPLICATION_IMAGE: ghcr.io/hadarshrabi/myapp-app
+  MIGRATION_IMAGE: ghcr.io/hadarshrabi/myapp-migration
+
+jobs:
+  prepare-publish:
+    name: Prepare publish metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      publish_kind: ${{ steps.tags.outputs.publish_kind }}
+      version: ${{ steps.tags.outputs.version }}
+      short_sha: ${{ steps.tags.outputs.short_sha }}
+      tag_suffixes: ${{ steps.tags.outputs.tag_suffixes }}
+      created: ${{ steps.commit.outputs.created }}
+    steps:
+      - name: Check out the verified commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Validate ref and calculate tags
+        id: tags
+        shell: bash
+        run: bash scripts/ci/ghcr-tags.sh "${GITHUB_REF_TYPE}" "${GITHUB_REF_NAME}" "${GITHUB_SHA}"
+
+      - name: Read reproducible creation timestamp
+        id: commit
+        shell: bash
+        run: echo "created=$(git show -s --format=%cI "${GITHUB_SHA}")" >> "${GITHUB_OUTPUT}"
+
+      - name: Summarize publish metadata
+        shell: bash
+        env:
+          PUBLISH_KIND: ${{ steps.tags.outputs.publish_kind }}
+          VERSION: ${{ steps.tags.outputs.version }}
+          TAG_SUFFIXES: ${{ steps.tags.outputs.tag_suffixes }}
+        run: |
+          {
+            echo "## GHCR publish metadata"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Ref: \`${GITHUB_REF}\`"
+            echo "- Publish kind: \`${PUBLISH_KIND}\`"
+            echo "- Version: \`${VERSION}\`"
+            echo "- Tags: \`${TAG_SUFFIXES}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  scan-platform:
+    name: Scan (${{ matrix.image_key }}, ${{ matrix.arch }})
+    needs: prepare-publish
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - image_key: application
+            target: runtime
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: application
+            target: runtime
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image_key: migration
+            target: migration
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: migration
+            target: migration
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out the verified commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build local image for security scan
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platform }}
+          load: true
+          push: false
+          tags: local/${{ matrix.image_key }}:scan-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.prepare-publish.outputs.version }}
+            org.opencontainers.image.created=${{ needs.prepare-publish.outputs.created }}
+          cache-from: type=gha,scope=publish-${{ matrix.target }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=publish-${{ matrix.target }}-${{ matrix.arch }}
+
+      - name: Scan image for High and Critical vulnerabilities
+        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
+        with:
+          image-ref: local/${{ matrix.image_key }}:scan-${{ matrix.arch }}
+          format: table
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          hide-progress: true
+          exit-code: "1"
+          version: v0.73.0
+
+  publish-platform:
+    name: Publish digest (${{ matrix.image_key }}, ${{ matrix.arch }})
+    needs:
+      - prepare-publish
+      - scan-platform
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - image_key: application
+            image: ghcr.io/hadarshrabi/myapp-app
+            target: runtime
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: application
+            image: ghcr.io/hadarshrabi/myapp-app
+            target: runtime
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image_key: migration
+            image: ghcr.io/hadarshrabi/myapp-migration
+            target: migration
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: migration
+            image: ghcr.io/hadarshrabi/myapp-migration
+            target: migration
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out the verified commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build and publish immutable platform digest
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.prepare-publish.outputs.version }}
+            org.opencontainers.image.created=${{ needs.prepare-publish.outputs.created }}
+          cache-from: type=gha,scope=publish-${{ matrix.target }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=publish-${{ matrix.target }}-${{ matrix.arch }}
+
+      - name: Persist published digest
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: digest-${{ matrix.image_key }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  create-manifests:
+    name: Create manifest (${{ matrix.image_key }})
+    needs:
+      - prepare-publish
+      - publish-platform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - image_key: application
+            image: ghcr.io/hadarshrabi/myapp-app
+          - image_key: migration
+            image: ghcr.io/hadarshrabi/myapp-migration
+    steps:
+      - name: Download platform digests
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: digest-${{ matrix.image_key }}-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Create and tag multi-platform manifest
+        id: manifest
+        shell: bash
+        env:
+          IMAGE: ${{ matrix.image }}
+          TAG_SUFFIXES: ${{ needs.prepare-publish.outputs.tag_suffixes }}
+        run: |
+          mapfile -t digest_files < <(find "${RUNNER_TEMP}/digests" -maxdepth 1 -type f -print | sort)
+          if [[ ${#digest_files[@]} -ne 2 ]]; then
+            echo "Expected two platform digests, found ${#digest_files[@]}" >&2
+            exit 1
+          fi
+
+          IFS=',' read -r -a suffixes <<< "${TAG_SUFFIXES}"
+          tag_args=()
+          for suffix in "${suffixes[@]}"; do
+            tag_args+=(--tag "${IMAGE}:${suffix}")
+          done
+
+          sources=()
+          for digest_file in "${digest_files[@]}"; do
+            sources+=("${IMAGE}@sha256:$(basename "${digest_file}")")
+          done
+
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+          docker buildx imagetools inspect --raw "${IMAGE}:${suffixes[0]}" > "${RUNNER_TEMP}/${{ matrix.image_key }}-index.json"
+          manifest_digest="sha256:$(sha256sum "${RUNNER_TEMP}/${{ matrix.image_key }}-index.json" | awk '{print $1}')"
+          echo "digest=${manifest_digest}" >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "image=${IMAGE}"
+            echo "digest=${manifest_digest}"
+            echo "tags=${TAG_SUFFIXES}"
+          } > "${RUNNER_TEMP}/${{ matrix.image_key }}-manifest.env"
+
+      - name: Upload manifest report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: manifest-${{ matrix.image_key }}
+          path: |
+            ${{ runner.temp }}/${{ matrix.image_key }}-manifest.env
+            ${{ runner.temp }}/${{ matrix.image_key }}-index.json
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-published-images:
+    name: Verify published images
+    needs:
+      - prepare-publish
+      - create-manifests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download manifest reports
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: manifest-*
+          path: ${{ runner.temp }}/manifests
+          merge-multiple: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Verify digests, tags, platforms, attestations, and sizes
+        shell: bash
+        env:
+          EXPECTED_TAG_SUFFIXES: ${{ needs.prepare-publish.outputs.tag_suffixes }}
+        run: |
+          for image_key in application migration; do
+            report="${RUNNER_TEMP}/manifests/${image_key}-manifest.env"
+            [[ -f "${report}" ]] || { echo "Missing report: ${report}" >&2; exit 1; }
+            # shellcheck disable=SC1090
+            source "${report}"
+
+            IFS=',' read -r -a suffixes <<< "${tags}"
+            [[ "${tags}" == "${EXPECTED_TAG_SUFFIXES}" ]]
+
+            for suffix in "${suffixes[@]}"; do
+              docker buildx imagetools inspect "${image}:${suffix}" > /dev/null
+            done
+
+            raw="${RUNNER_TEMP}/${image_key}-verified-index.json"
+            docker buildx imagetools inspect --raw "${image}@${digest}" > "${raw}"
+
+            mapfile -t platforms < <(jq -r '.manifests[] | select(.platform.os != "unknown") | "\(.platform.os)/\(.platform.architecture)"' "${raw}" | sort -u)
+            [[ " ${platforms[*]} " == *" linux/amd64 "* ]]
+            [[ " ${platforms[*]} " == *" linux/arm64 "* ]]
+
+            attestation_count=$(jq '[.manifests[] | select(.platform.os == "unknown" and .annotations["vnd.docker.reference.type"] == "attestation-manifest")] | length' "${raw}")
+            if (( attestation_count < 2 )); then
+              echo "Expected attached SBOM/provenance manifests for ${image}, found ${attestation_count}" >&2
+              exit 1
+            fi
+
+            total_compressed_size=0
+            platform_sizes=()
+            while IFS=$'\t' read -r platform platform_digest; do
+              platform_manifest="${RUNNER_TEMP}/${image_key}-${platform#*/}-manifest.json"
+              docker buildx imagetools inspect --raw "${image}@${platform_digest}" > "${platform_manifest}"
+              platform_size=$(jq '[.layers[].size] | add' "${platform_manifest}")
+              total_compressed_size=$((total_compressed_size + platform_size))
+              platform_sizes+=("${platform}=${platform_size}")
+            done < <(jq -r '.manifests[] | select(.platform.os != "unknown") | ["\(.platform.os)/\(.platform.architecture)", .digest] | @tsv' "${raw}")
+
+            {
+              echo "## ${image}"
+              echo "- Digest: \`${digest}\`"
+              echo "- Tags: \`${tags}\`"
+              echo "- Platforms: \`${platforms[*]}\`"
+              echo "- Compressed image bytes by platform: \`${platform_sizes[*]}\`"
+              echo "- Total compressed image bytes: \`${total_compressed_size}\`"
+              echo "- Attestation manifests: \`${attestation_count}\`"
+            } >> "${GITHUB_STEP_SUMMARY}"
+          done
+
+  publish-gate:
+    name: Publish gate
+    if: always()
+    needs:
+      - prepare-publish
+      - scan-platform
+      - publish-platform
+      - create-manifests
+      - verify-published-images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require every publish job to pass
+        shell: bash
+        env:
+          PREPARE_RESULT: ${{ needs.prepare-publish.result }}
+          SCAN_RESULT: ${{ needs.scan-platform.result }}
+          PUBLISH_RESULT: ${{ needs.publish-platform.result }}
+          MANIFEST_RESULT: ${{ needs.create-manifests.result }}
+          VERIFY_RESULT: ${{ needs.verify-published-images.result }}
+        run: |
+          test "${PREPARE_RESULT}" = success
+          test "${SCAN_RESULT}" = success
+          test "${PUBLISH_RESULT}" = success
+          test "${MANIFEST_RESULT}" = success
+          test "${VERIFY_RESULT}" = success
