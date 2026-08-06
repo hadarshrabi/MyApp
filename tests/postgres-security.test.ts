@@ -4,8 +4,9 @@ import request from "supertest";
 import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 
-process.loadEnvFile?.(".env");
+if (existsSync(".env")) process.loadEnvFile?.(".env");
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 const testDatabaseUrl = new URL(process.env.DATABASE_URL);
 if (testDatabaseUrl.pathname.endsWith("_test")) throw new Error("DATABASE_URL must point to production before deriving the isolated test database");
