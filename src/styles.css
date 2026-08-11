@@ -1321,3 +1321,20 @@ button, a, input, select, textarea { touch-action: manipulation; }
   .login-screen { place-items: start center; }
   .login-security { margin-top: 16px; }
 }
+.pwa-status-layer { position: relative; z-index: 1000; }
+.pwa-offline-banner { position: fixed; z-index: 1000; top: env(safe-area-inset-top); inset-inline: 0; min-height: 42px; display: grid; place-items: center; padding: 9px max(14px, env(safe-area-inset-right)) 9px max(14px, env(safe-area-inset-left)); background: #7b4c28; color: #fff; text-align: center; font-size: 14px; font-weight: 700; box-shadow: 0 5px 18px #1f171133; }
+.pwa-update-prompt, .pwa-install-hint { position: fixed; z-index: 1001; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); width: min(390px, calc(100% - 32px - env(safe-area-inset-left) - env(safe-area-inset-right))); display: grid; gap: 14px; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: #fff; box-shadow: 0 18px 55px #20362b38; }
+.pwa-update-prompt > div:first-child { display: grid; gap: 4px; }
+.pwa-update-prompt span, .pwa-install-hint span { color: var(--muted); line-height: 1.5; }
+.pwa-prompt-actions { display: grid; grid-template-columns: 1fr 1.2fr; gap: 9px; }
+.pwa-prompt-actions button { min-height: 44px; }
+.pwa-install-hint { padding-inline-end: 46px; }
+.pwa-dismiss { position: absolute; top: 8px; left: 8px; width: 36px; min-width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: #f1f4f2; color: var(--muted); font-size: 22px; }
+
+@media (display-mode: standalone) {
+  html, body { background: #f7f6f2; }
+}
+
+@media (max-width: 430px) {
+  .pwa-update-prompt, .pwa-install-hint { right: max(10px, env(safe-area-inset-right)); bottom: calc(82px + env(safe-area-inset-bottom)); width: calc(100% - 20px - env(safe-area-inset-left) - env(safe-area-inset-right)); }
+}
