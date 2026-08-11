@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: "responsive.spec.ts",
+  testMatch: ["responsive.spec.ts", "pwa.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
@@ -17,7 +17,7 @@ export default defineConfig({
   webServer: {
     command: "npm run db:deploy && npm run db:seed && npm run api:start",
     url: "http://127.0.0.1:4173/api/health/ready",
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
       ...process.env,

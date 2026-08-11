@@ -5,9 +5,21 @@ import { AuthProvider } from "./context/AuthContext";
 import { AppProvider } from "./context/AppContext";
 import { BusinessDataProvider } from "./context/BusinessDataContext";
 import { AttendanceExceptionsProvider } from "./context/AttendanceExceptionsContext";
+import { PwaStatus } from "./components/PwaStatus";
 import "./styles.css";
 
 document.documentElement.lang = "he";
 document.documentElement.dir = "rtl";
 
-createRoot(document.getElementById("root")!).render(<StrictMode><AuthProvider><BusinessDataProvider><AppProvider><AttendanceExceptionsProvider><App /></AttendanceExceptionsProvider></AppProvider></BusinessDataProvider></AuthProvider></StrictMode>);
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <AuthProvider>
+      <BusinessDataProvider>
+        <AppProvider>
+          <AttendanceExceptionsProvider><App /></AttendanceExceptionsProvider>
+        </AppProvider>
+      </BusinessDataProvider>
+    </AuthProvider>
+    <PwaStatus />
+  </StrictMode>,
+);
