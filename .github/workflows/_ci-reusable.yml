@@ -74,6 +74,12 @@ jobs:
       - name: Test PostgreSQL integration and security
         run: npm run test:postgres
 
+      - name: Install Chromium for responsive tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Test responsive layouts
+        run: npm run test:responsive
+
   container-verification:
     name: Container verification
     needs: quality-and-tests
