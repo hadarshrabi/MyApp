@@ -6,6 +6,7 @@ type NavigatorWithStandalone = Navigator & { standalone?: boolean };
 export function PwaStatus() {
   const [online, setOnline] = useState(() => navigator.onLine);
   const [installHintDismissed, setInstallHintDismissed] = useState(() => sessionStorage.getItem("pwa-install-hint-dismissed") === "1");
+  const [formFieldFocused, setFormFieldFocused] = useState(false);
   const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker } = useRegisterSW({
     immediate: true,
     onRegisterError(error) { console.error("PWA registration failed", error); },
@@ -22,11 +23,23 @@ export function PwaStatus() {
     };
   }, []);
 
+  useEffect(() => {
+    const isFormField = (target: EventTarget | null) => target instanceof HTMLElement && target.matches("input, textarea, select");
+    const handleFocusIn = (event: FocusEvent) => { if (isFormField(event.target)) setFormFieldFocused(true); };
+    const handleFocusOut = () => window.setTimeout(() => setFormFieldFocused(isFormField(document.activeElement)), 0);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+    };
+  }, []);
+
   const showIosInstallHint = useMemo(() => {
     const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const standalone = window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as NavigatorWithStandalone).standalone);
-    return ios && !standalone && !installHintDismissed;
-  }, [installHintDismissed]);
+    return ios && !standalone && !installHintDismissed && !formFieldFocused;
+  }, [formFieldFocused, installHintDismissed]);
 
   const dismissInstallHint = () => {
     sessionStorage.setItem("pwa-install-hint-dismissed", "1");
@@ -47,7 +60,7 @@ export function PwaStatus() {
       <span className="pwa-install-icon" aria-hidden="true">i</span>
       <div className="pwa-install-copy">
         <strong>הוספה למסך הבית</strong>
-        <span>לחצו על שיתוף ב־Safari ואז על „הוספה למסך הבית”. כך תוכלו לגשת למערכת בקלות ובמהירות.</span>
+        <span>לחצו על שיתוף ב־Safari ואז על „הוספה למסך הבית”.</span>
       </div>
     </aside>}
   </div>;

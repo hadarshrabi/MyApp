@@ -60,7 +60,7 @@ test("login is usable without iOS auto-zoom at every target width", async ({ pag
   await page.setViewportSize({ width: 390, height: 390 });
   await page.goto("/login");
   await page.getByPlaceholder("name@example.com").focus();
-  await expect(page.getByRole("button", { name: "כניסה" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "היכנס למערכת" })).toBeVisible();
   await assertResponsiveViewport(page, "login 390x390 keyboard-sized viewport");
 });
 
@@ -69,7 +69,7 @@ test("authenticated routes do not overflow on mobile, tablet, or desktop", async
   await page.goto("/login");
   await page.getByPlaceholder("name@example.com").fill("owner@linoy-designs.example");
   await page.getByPlaceholder("הקלדת סיסמה").fill(process.env.SEED_ADMIN_PASSWORD ?? "");
-  await page.getByRole("button", { name: "כניסה", exact: true }).click();
+  await page.getByRole("button", { name: "היכנס למערכת", exact: true }).click();
   await expect(page).toHaveURL(/\/$/);
 
   for (const width of viewports) {

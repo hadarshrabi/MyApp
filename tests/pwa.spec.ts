@@ -95,27 +95,59 @@ test("updates require an explicit user action", async ({ page, request }) => {
 });
 
 test("iOS install hint is compact, dismissible, and hidden in standalone mode", async ({ browser }) => {
-  const widths = [320, 360, 375, 390, 414, 430];
+  const viewports = [
+    { width: 320, height: 568 },
+    { width: 360, height: 800 },
+    { width: 375, height: 667 },
+    { width: 390, height: 844 },
+    { width: 393, height: 852 },
+    { width: 414, height: 896 },
+    { width: 430, height: 932 },
+  ];
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+    serviceWorkers: "block",
   });
   const page = await context.newPage();
 
-  for (const width of widths) {
-    await page.setViewportSize({ width, height: 700 });
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
     await page.goto("/login");
     const hint = page.getByRole("status", { name: "התקנת האפליקציה באייפון" });
     await expect(hint).toBeVisible();
-    await expect(hint).toContainText("כך תוכלו לגשת למערכת בקלות ובמהירות");
+    await expect(hint).toContainText("לחצו על שיתוף ב־Safari ואז על „הוספה למסך הבית”");
     const bounds = await hint.boundingBox();
     expect(bounds).not.toBeNull();
     expect(bounds!.x).toBeGreaterThanOrEqual(8);
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width - 8);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width - 8);
+    const layout = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      offenders: Array.from(document.querySelectorAll<HTMLElement>("body *")).flatMap(element => {
+        const rect = element.getBoundingClientRect();
+        return rect.left < -1 || rect.right > document.documentElement.clientWidth + 1
+          ? [{ className: element.className, tag: element.tagName, left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width) }]
+          : [];
+      }).slice(0, 10),
+    }));
+    expect(layout.scrollWidth, JSON.stringify(layout.offenders)).toBeLessThanOrEqual(viewport.width);
+    const closeButton = page.getByRole("button", { name: "סגירת הוראות התקנה" });
+    const closeSize = await closeButton.boundingBox();
+    expect(closeSize!.width).toBeGreaterThanOrEqual(40);
+    expect(closeSize!.height).toBeGreaterThanOrEqual(40);
+    const inputSize = await page.getByPlaceholder("name@example.com").evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
+    expect(inputSize).toBeGreaterThanOrEqual(16);
 
-    await page.getByPlaceholder("name@example.com").focus();
-    await expect(hint).toBeHidden();
   }
+
+  await page.setViewportSize({ width: 390, height: 390 });
+  await page.goto("/login");
+  await page.waitForTimeout(450);
+  const emailInput = page.getByPlaceholder("name@example.com");
+  await emailInput.focus();
+  await expect(emailInput).toBeFocused();
+  await expect(page.getByRole("status", { name: "התקנת האפליקציה באייפון" })).toBeHidden();
+  await emailInput.blur();
+  await expect(page.getByRole("status", { name: "התקנת האפליקציה באייפון" })).toBeVisible();
 
   await page.setViewportSize({ width: 667, height: 320 });
   await page.goto("/login");
@@ -130,6 +162,7 @@ test("iOS install hint is compact, dismissible, and hidden in standalone mode", 
 
   const standaloneContext = await browser.newContext({
     userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+    serviceWorkers: "block",
   });
   const standalonePage = await standaloneContext.newPage();
   await standalonePage.addInitScript(() => {
