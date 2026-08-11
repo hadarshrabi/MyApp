@@ -1,5 +1,8 @@
 # פריסת Node/Express + PostgreSQL
 
+> התהליך המעשי מבוסס Docker Compose מתועד ב־`docs/PRODUCTION_RUNBOOK.md`.
+> נוהל rollback מתועד ב־`docs/ROLLBACK_RUNBOOK.md`.
+
 היישום נפרס כשירות Node יחיד: Express מגיש את ה־API ואת קובצי React הבנויים
 מאותו origin. PostgreSQL חייב להיות שירות מנוהל ברשת פרטית; אין לחשוף את פורט
 המסד לאינטרנט.

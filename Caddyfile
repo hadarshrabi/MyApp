@@ -1,0 +1,27 @@
+{
+	admin off
+	persist_config off
+}
+
+{$APP_DOMAIN:localhost} {
+	encode zstd gzip
+
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	reverse_proxy app:3001 {
+		health_uri /api/health/live
+		health_interval 15s
+		health_timeout 5s
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
