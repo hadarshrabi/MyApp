@@ -44,8 +44,11 @@ export function PwaStatus() {
     </aside>}
     {showIosInstallHint && <aside className="pwa-install-hint" role="status" aria-label="התקנת האפליקציה באייפון">
       <button type="button" className="pwa-dismiss" onClick={dismissInstallHint} aria-label="סגירת הוראות התקנה">×</button>
-      <strong>הוספה למסך הבית</strong>
-      <span>לחצו על שיתוף ב־Safari ואז על „הוספה למסך הבית”.</span>
+      <span className="pwa-install-icon" aria-hidden="true">i</span>
+      <div className="pwa-install-copy">
+        <strong>הוספה למסך הבית</strong>
+        <span>לחצו על שיתוף ב־Safari ואז על „הוספה למסך הבית”. כך תוכלו לגשת למערכת בקלות ובמהירות.</span>
+      </div>
     </aside>}
   </div>;
 }

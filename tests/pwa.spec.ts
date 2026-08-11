@@ -93,3 +93,49 @@ test("updates require an explicit user action", async ({ page, request }) => {
   expect(await worker.text()).toContain("SKIP_WAITING");
   await expect(page.getByRole("button", { name: "עדכון עכשיו" })).toHaveCount(0);
 });
+
+test("iOS install hint is compact, dismissible, and hidden in standalone mode", async ({ browser }) => {
+  const widths = [320, 360, 375, 390, 414, 430];
+  const context = await browser.newContext({
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+  });
+  const page = await context.newPage();
+
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 700 });
+    await page.goto("/login");
+    const hint = page.getByRole("status", { name: "התקנת האפליקציה באייפון" });
+    await expect(hint).toBeVisible();
+    await expect(hint).toContainText("כך תוכלו לגשת למערכת בקלות ובמהירות");
+    const bounds = await hint.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(8);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width - 8);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+
+    await page.getByPlaceholder("name@example.com").focus();
+    await expect(hint).toBeHidden();
+  }
+
+  await page.setViewportSize({ width: 667, height: 320 });
+  await page.goto("/login");
+  await expect(page.getByRole("status", { name: "התקנת האפליקציה באייפון" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(667);
+
+  await page.getByRole("button", { name: "סגירת הוראות התקנה" }).click();
+  await expect(page.getByRole("status", { name: "התקנת האפליקציה באייפון" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("status", { name: "התקנת האפליקציה באייפון" })).toHaveCount(0);
+  await context.close();
+
+  const standaloneContext = await browser.newContext({
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+  });
+  const standalonePage = await standaloneContext.newPage();
+  await standalonePage.addInitScript(() => {
+    Object.defineProperty(navigator, "standalone", { configurable: true, value: true });
+  });
+  await standalonePage.goto("/login");
+  await expect(standalonePage.getByRole("status", { name: "התקנת האפליקציה באייפון" })).toHaveCount(0);
+  await standaloneContext.close();
+});
