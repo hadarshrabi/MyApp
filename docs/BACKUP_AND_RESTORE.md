@@ -1,40 +1,66 @@
-# גיבוי ושחזור PostgreSQL
+# PostgreSQL backup and restore
 
-## מדיניות מומלצת לייצור
+The production Compose stack provides a one-shot `backup` service. It connects
+to PostgreSQL over the internal Docker network; PostgreSQL is not published to
+the host.
 
-- גיבוי מלא מוצפן בכל יום ושמירה למשך 35 ימים.
-- גיבוי רציף של WAL לצורך שחזור לנקודת זמן, עם יעד RPO של עד 15 דקות.
-- עותק מוצפן בחשבון או באזור נפרד, ללא הרשאת מחיקה לחשבון האפליקציה.
-- בדיקת שחזור אוטומטית אחת לשבוע ובדיקת שחזור מתועדת אחת לרבעון.
-- התראות על כשל בגיבוי, חריגה במשך הגיבוי או אי־השלמת בדיקת שחזור.
+## Backup format and safety
 
-אין לשמור סיסמה בפקודה או בקובץ שבמאגר. יש לספק `DATABASE_URL` דרך מנהל
-סודות בסביבת ההרצה.
+- `pg_dump --format=custom --compress=9`
+- no ownership or ACL statements
+- restrictive `umask 077`
+- temporary `.partial` file followed by an atomic rename
+- `pg_restore --list` validation before completion
+- SHA-256 checksum next to every dump
+- configurable local retention with `BACKUP_RETENTION_DAYS`
 
-## גיבוי ידני
-
-```bash
-pg_dump --format=custom --no-owner --no-acl --dbname="$DATABASE_URL" --file=linoy-designs.dump
-```
-
-יש להצפין את הקובץ ולהעבירו מיד לאחסון הגיבויים. קובצי גיבוי אינם נכנסים ל־Git.
-
-## שחזור
-
-1. יוצרים מסד PostgreSQL ריק בגרסה תואמת.
-2. חוסמים כתיבות לאפליקציה ומוודאים שנבחר יעד השחזור הנכון.
-3. משחזרים:
+Run a backup:
 
 ```bash
-pg_restore --clean --if-exists --no-owner --no-acl --dbname="$RESTORE_DATABASE_URL" linoy-designs.dump
+docker compose --env-file .env.production \
+  -f compose.production.yml \
+  --profile operations run --rm backup
 ```
 
-4. מריצים `npx prisma migrate status`.
-5. בודקים התחברות, ספירות משתמשים/נוכחות/מכירות/מלאי, ושלמות קשרים.
-6. מפעילים את האפליקציה מול מסד השחזור רק לאחר אישור בעל תפקיד מורשה.
-7. מתעדים תאריך, גיבוי מקור, מבצע, תוצאות וזמן שחזור בפועל.
+Local files are written under `BACKUP_DIR` and ignored by Git. Production must
+copy encrypted backups to off-host object storage and alert on failures. A local
+backup on the same VM is only the first stage of the backup pipeline.
 
-## חסם ייצור
+## Isolated restore test
 
-המאגר כולל נוהל בלבד. לפני ייצור יש להגדיר בפועל גיבויים מנוהלים, הצפנה,
-שמירת WAL, התראות ובדיקת שחזור מוצלחת בסביבת היעד.
+The restore test creates a temporary PostgreSQL service on a dedicated internal
+network and tmpfs. It does not connect to or replace the production database.
+
+```bash
+PRODUCTION_ENV_FILE=.env.production sh scripts/production/restore-test.sh
+```
+
+To test a specific dump:
+
+```bash
+PRODUCTION_ENV_FILE=.env.production \
+  sh scripts/production/restore-test.sh linoy_designs-YYYYMMDDTHHMMSSZ.dump
+```
+
+The process validates the checksum and archive, restores with
+`--exit-on-error`, verifies that public tables exist and verifies completed
+Prisma migrations.
+
+## Real restore
+
+`scripts/production/restore.sh` contains safeguards but is not invoked against
+production by the deployment scripts. A real restore is a separate incident
+procedure described in `docs/ROLLBACK_RUNBOOK.md`; it requires stopped writers,
+explicit target confirmation and owner approval.
+
+## Suggested production retention
+
+- seven daily logical backups
+- four weekly copies in object storage
+- periodic block-volume backup as a second recovery layer
+- weekly automated restore test
+- documented quarterly restore exercise
+
+Retention must be adjusted to database size, recovery objectives and storage
+cost. WAL archiving/PITR is a later availability stage and is not claimed by
+this local stack.

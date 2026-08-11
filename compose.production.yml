@@ -1,0 +1,180 @@
+name: ${COMPOSE_PROJECT_NAME:-myapp-production}
+
+x-common-security: &common-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-database-environment: &database-environment
+  PGHOST: postgres
+  PGPORT: "5432"
+  PGDATABASE: ${POSTGRES_DB:?Set POSTGRES_DB in the production environment file}
+  PGUSER: ${POSTGRES_USER:?Set POSTGRES_USER in the production environment file}
+  PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the production environment file}
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193}
+    restart: unless-stopped
+    user: postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in the production environment file}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in the production environment file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the production environment file}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    tmpfs:
+      - /var/run/postgresql:uid=70,gid=70,mode=0775
+      - /tmp:noexec,nosuid,size=64m
+    pids_limit: 200
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-1g}
+    cpus: ${POSTGRES_CPU_LIMIT:-1.0}
+    stop_grace_period: 45s
+
+  app:
+    image: ${APP_IMAGE:-ghcr.io/hadarshrabi/myapp-app@sha256:1b1ad3c95b7dfb4bc07c6f15d870bb761c44e1dadc4140983b9b054f138815d6}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in the production environment file}
+      JWT_ISSUER: ${JWT_ISSUER:-linoy-designs-api}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-linoy-designs-app}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN in the production environment file}
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3001"
+      SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
+    expose:
+      - "3001"
+    networks:
+      - edge
+      - backend
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 25s
+    <<: *common-security
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    pids_limit: 150
+    mem_limit: ${APP_MEMORY_LIMIT:-768m}
+    cpus: ${APP_CPU_LIMIT:-1.0}
+    stop_grace_period: 20s
+
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d}
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-localhost}
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "wget", "--no-check-certificate", "-qO-", "https://localhost/api/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    pids_limit: 100
+    mem_limit: ${CADDY_MEMORY_LIMIT:-256m}
+    cpus: ${CADDY_CPU_LIMIT:-0.50}
+    stop_grace_period: 15s
+
+  migration:
+    image: ${MIGRATION_IMAGE:-ghcr.io/hadarshrabi/myapp-migration@sha256:762a145c41e63bd5ff52c860fe719383ab99581bcc320c99482f383e71a167ac}
+    profiles: ["operations"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+    networks:
+      - backend
+    <<: *common-security
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    pids_limit: 100
+    mem_limit: ${MIGRATION_MEMORY_LIMIT:-512m}
+    cpus: ${MIGRATION_CPU_LIMIT:-1.0}
+
+  backup:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193}
+    profiles: ["operations"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *database-environment
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+    volumes:
+      - ./scripts/production:/scripts:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+    networks:
+      - backend
+    <<: *common-security
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    pids_limit: 100
+    mem_limit: 256m
+    cpus: 0.50
+
+networks:
+  edge:
+  backend:
+    internal: true
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

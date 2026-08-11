@@ -1,0 +1,57 @@
+services:
+  restore-test-db:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193}
+    profiles: ["restore-test"]
+    restart: "no"
+    environment:
+      POSTGRES_DB: restore_test
+      POSTGRES_USER: restore_test
+      POSTGRES_PASSWORD: restore-test-not-a-production-secret
+    networks:
+      - restore_test_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U restore_test -d restore_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /var/lib/postgresql/data
+      - /var/run/postgresql
+      - /tmp:noexec,nosuid,size=64m
+
+  restore-test:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193}
+    profiles: ["restore-test"]
+    restart: "no"
+    depends_on:
+      restore-test-db:
+        condition: service_healthy
+    environment:
+      PGHOST: restore-test-db
+      PGPORT: "5432"
+      PGDATABASE: restore_test
+      PGUSER: restore_test
+      PGPASSWORD: restore-test-not-a-production-secret
+      # restore.sh rejects this sentinel; it only allows an existing plain file name.
+      BACKUP_FILE: ${BACKUP_FILE:-BACKUP_FILE_NOT_SET}
+      RESTORE_CONFIRM_DATABASE: restore_test
+    entrypoint: ["/bin/sh", "/scripts/restore.sh"]
+    volumes:
+      - ./scripts/production:/scripts:ro
+      - ${BACKUP_DIR:-./backups}:/backups:ro
+    networks:
+      - restore_test_network
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+
+networks:
+  restore_test_network:
+    internal: true
