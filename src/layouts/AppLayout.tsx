@@ -14,7 +14,7 @@ const adminNavigation = [
   { icon: "❀", label: "מוצרים", path: "/products" },
   { icon: "⌖", label: "מפת עמדות", path: "/map" },
   { icon: "♚", label: "משתמשים והרשאות", path: "/users" },
-  { icon: "≡", label: "היסטוריית ביקורת", path: "/audit" },
+  { icon: "≡", label: "יומן פעילות", path: "/audit" },
   { icon: "⚙", label: "הגדרות", path: "/settings" },
 ];
 

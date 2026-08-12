@@ -165,3 +165,7 @@ export const managedUserStatusDto = z.object({
   active: z.boolean(),
   reason: z.string().trim().min(3).max(500).default("שינוי מצב גישה למערכת"),
 }).strict();
+
+export const managedUserPasswordDto = z.object({
+  password: z.string().min(10, "הסיסמה חייבת להכיל לפחות 10 תווים").max(128, "הסיסמה ארוכה מדי"),
+}).strict();

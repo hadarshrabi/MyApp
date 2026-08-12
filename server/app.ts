@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { ZodError, type ZodType } from "zod";
 import { PostgresRepository, ConflictError, ForbiddenError } from "./postgres-repository";
-import { attendanceApprovalDto, attendanceCorrectionDto, attendanceRejectionDto, clockDto, createManagedUserDto, createProductDto, createStationDto, duplicateStationDto, employeeStationAssignmentDto, inventoryAdjustmentDto, loginDto, managedUserStatusDto, manualAttendanceDto, payrollReportQueryDto, saleDto, stationArchiveDto, stationPermanentDeleteDto, stationProductAdjustmentDto, stationProductDetailsDto, stationProductDto, stationProductRemovalDto, stationRestoreDto, stationStatusDto, updateManagedUserDto, updateProductDto, updateStationDto } from "./validation";
+import { attendanceApprovalDto, attendanceCorrectionDto, attendanceRejectionDto, clockDto, createManagedUserDto, createProductDto, createStationDto, duplicateStationDto, employeeStationAssignmentDto, inventoryAdjustmentDto, loginDto, managedUserPasswordDto, managedUserStatusDto, manualAttendanceDto, payrollReportQueryDto, saleDto, stationArchiveDto, stationPermanentDeleteDto, stationProductAdjustmentDto, stationProductDetailsDto, stationProductDto, stationProductRemovalDto, stationRestoreDto, stationStatusDto, updateManagedUserDto, updateProductDto, updateStationDto } from "./validation";
 import { createAccessToken, hashPassword, hashRefreshToken, newRefreshToken, newTokenFamily, refreshCookie, refreshExpiry, verifyPassword } from "./auth";
 import { requireActiveUser, requireAdmin, requireAuth } from "./middleware/auth";
 
@@ -128,6 +128,12 @@ export function createApp(repository = new PostgresRepository()) {
   app.post("/api/admin/users/:id/status", requireAdmin, validate(managedUserStatusDto), asyncRoute(async (request, response) => {
     const user = await repository.setManagedUserStatus(String(request.params.id), request.body.active, request.auth!.userId, request.body.reason);
     return user ? response.json({ user }) : response.status(404).json({ error: "המשתמש לא נמצא" });
+  }));
+  app.post("/api/admin/users/:id/password", requireAdmin, validate(managedUserPasswordDto), asyncRoute(async (request, response) => {
+    const targetUserId = String(request.params.id);
+    if (targetUserId === request.auth!.userId) return response.status(403).json({ error: "לא ניתן לאפס את הסיסמה של המשתמש המחובר ממסך הניהול" });
+    const updated = await repository.resetManagedUserPassword(targetUserId, await hashPassword(request.body.password), request.auth!.userId);
+    return updated ? response.json({ success: true }) : response.status(404).json({ error: "המשתמש לא נמצא" });
   }));
   app.patch("/api/admin/employees/:id/station", requireAdmin, validate(employeeStationAssignmentDto), asyncRoute(async (request, response) => {
     const employee = await repository.assignEmployeeStation(String(request.params.id), request.body.stationId, request.auth!.userId, request.body.reason);

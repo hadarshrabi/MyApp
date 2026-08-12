@@ -433,6 +433,21 @@ export class PostgresRepository {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
+  async resetManagedUserPassword(userId: string, passwordHash: string, adminUserId: string) {
+    return this.prisma.$transaction(async tx => {
+      const target = await tx.user.findUnique({ where: { id: userId }, select: { id: true } });
+      if (!target) return null;
+      await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+      await tx.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
+      await tx.auditLog.create({ data: {
+        entityType: "USER", entityId: userId, fieldName: "passwordReset",
+        originalValue: Prisma.JsonNull, newValue: Prisma.JsonNull,
+        adminUserId, reason: "איפוס סיסמה על ידי מנהל",
+      } });
+      return target;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
   async getEmployeeAssignment(employeeId: string) {
     return this.prisma.employee.findFirst({
       where: { id: employeeId, user: { active: true }, assignedStation: { active: true, archivedAt: null } },

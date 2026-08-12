@@ -39,6 +39,10 @@ export function UsersPage() {
   const [error, setError] = useState("");
   const [confirmRoleChange, setConfirmRoleChange] = useState(false);
   const [statusTarget, setStatusTarget] = useState<UserView | null>(null);
+  const [passwordTarget, setPasswordTarget] = useState<UserView | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
   const activeStations = stations
     .filter(station => station.active && !station.archivedAt)
@@ -57,10 +61,50 @@ export function UsersPage() {
   }, [users, search, filter]);
 
   useEffect(() => {
-    if (!editingUser && !statusTarget) return;
+    if (!editingUser && !statusTarget && !passwordTarget) return;
     document.documentElement.classList.add("mobile-sheet-open");
     return () => document.documentElement.classList.remove("mobile-sheet-open");
-  }, [editingUser, statusTarget]);
+  }, [editingUser, statusTarget, passwordTarget]);
+
+  function openPasswordReset(target: UserView) {
+    if (target.id === signedInUser?.id) return;
+    setEditingUser(null);
+    setPasswordTarget(target);
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowNewPassword(false);
+    setError("");
+  }
+
+  function closePasswordReset() {
+    if (saving) return;
+    setPasswordTarget(null);
+    setNewPassword("");
+    setConfirmPassword("");
+    setError("");
+  }
+
+  async function resetPassword(event: FormEvent) {
+    event.preventDefault();
+    if (!passwordTarget) return;
+    if (newPassword.length < 10) { setError("הסיסמה חייבת להכיל לפחות 10 תווים"); return; }
+    if (newPassword.length > 128) { setError("הסיסמה ארוכה מדי"); return; }
+    if (newPassword !== confirmPassword) { setError("הסיסמאות אינן תואמות"); return; }
+    setSaving(true);
+    setError("");
+    try {
+      await userService.resetPassword(passwordTarget.id, newPassword);
+      notify("הסיסמה עודכנה וכל החיבורים הפעילים בוטלו");
+      setPasswordTarget(null);
+      setNewPassword("");
+      setConfirmPassword("");
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "לא ניתן לעדכן את הסיסמה");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function openCreate() {
     setForm(emptyForm);
@@ -234,6 +278,7 @@ export function UsersPage() {
               <label>שכר לשעה<input type="number" inputMode="decimal" min="0" step="0.01" value={form.hourlyRate} onChange={event => setForm(current => ({ ...current, hourlyRate: event.target.value }))} placeholder="0" /></label>
               <label className="wide">עמדה קבועה<select value={form.assignedStationId} onChange={event => setForm(current => ({ ...current, assignedStationId: event.target.value }))}><option value="">ללא עמדה בשלב זה</option>{activeStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}</select></label>
             </div>}
+            {editingUser !== "NEW" && editingUser.id !== signedInUser?.id && <button className="user-password-action" type="button" onClick={() => openPasswordReset(editingUser)}><span aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="10" width="10" height="9" rx="2"/><path d="M9 10V7a3 3 0 0 1 6 0v3M12 13v3"/></svg></span><div><b>איפוס / שינוי סיסמה</b><small>החלפת הסיסמה וביטול חיבורים פעילים</small></div><i aria-hidden="true">‹</i></button>}
             {editingUser !== "NEW" && editingUser.id !== signedInUser?.id && <button className={editingUser.active ? "user-status-action danger" : "user-status-action restore"} type="button" onClick={() => { setEditingUser(null); setStatusTarget(editingUser); setError(""); }}>{editingUser.active ? "השבתת גישה למערכת" : "החזרת גישה למערכת"}<small>{editingUser.active ? "המשתמש לא יוכל להתחבר, וההיסטוריה תישמר" : "המשתמש יוכל להתחבר שוב עם הסיסמה הקיימת"}</small></button>}
           </div>}
           {error && <p className="user-form-error" role="alert">{error}</p>}
@@ -253,6 +298,21 @@ export function UsersPage() {
         <p><b>{statusTarget.displayName}</b> {statusTarget.active ? "לא יוכל להתחבר או להשתמש במערכת. כל רישומי הנוכחות, המכירות והביקורת יישמרו." : "יוכל להתחבר שוב למערכת באמצעות פרטי הכניסה הקיימים."}</p>
         {error && <p className="user-form-error" role="alert">{error}</p>}
         <footer><button className="secondary" type="button" disabled={saving} onClick={() => setStatusTarget(null)}>ביטול</button><button className={statusTarget.active ? "user-confirm-danger" : "primary"} type="button" disabled={saving} onClick={() => void changeStatus()}>{saving ? "מעדכן…" : statusTarget.active ? "כן, השבתת גישה" : "כן, החזרת גישה"}</button></footer>
+      </SwipeSheet>
+    </>}
+
+    {passwordTarget && <>
+      <button className="mobile-drawer-scrim user-sheet-scrim" aria-label="סגירת חלון שינוי סיסמה" onClick={closePasswordReset} />
+      <SwipeSheet className="password-reset-sheet" ariaLabel="שינוי סיסמה" onDismiss={closePasswordReset}>
+        <header><div><strong>שינוי סיסמה</strong><small>הסיסמה הקיימת אינה מוצגת ואינה ניתנת לשחזור</small></div></header>
+        <div className="password-reset-user"><span>{initials(passwordTarget.displayName)}</span><div><b>{passwordTarget.displayName}</b><small>{passwordTarget.systemRole === "ADMIN" ? "מנהל" : "עובד"}</small></div></div>
+        <form onSubmit={resetPassword}>
+          <label>סיסמה חדשה<span className="password-reset-input"><input type={showNewPassword ? "text" : "password"} autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)} minLength={10} maxLength={128} required /><button type="button" onClick={() => setShowNewPassword(value => !value)} aria-label={showNewPassword ? "הסתרת סיסמה" : "הצגת סיסמה"}><svg viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/>{showNewPassword && <path d="M4 4 20 20"/>}</svg></button></span><small>10–128 תווים. הסיסמה תוצפן בשרת.</small></label>
+          <label>אימות סיסמה חדשה<span className="password-reset-input"><input type={showNewPassword ? "text" : "password"} autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} minLength={10} maxLength={128} required /><button type="button" onClick={() => setShowNewPassword(value => !value)} aria-label={showNewPassword ? "הסתרת סיסמה" : "הצגת סיסמה"}><svg viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/>{showNewPassword && <path d="M4 4 20 20"/>}</svg></button></span></label>
+          {error && <p className="user-form-error" role="alert">{error}</p>}
+          <p className="password-reset-note">לאחר העדכון כל חיבורי הרענון של המשתמש יבוטלו. ייתכן שחיבור פעיל יישאר זמין עד 15 דקות.</p>
+          <footer><button className="secondary" type="button" disabled={saving} onClick={closePasswordReset}>ביטול</button><button className="primary" type="submit" disabled={saving}>{saving ? "מעדכן…" : "עדכון סיסמה"}</button></footer>
+        </form>
       </SwipeSheet>
     </>}
   </div>;

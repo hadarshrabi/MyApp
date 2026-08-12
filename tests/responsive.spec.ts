@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const viewports = [320, 360, 375, 390, 393, 414, 430, 768, 1024, 1440] as const;
+const viewports = [320, 360, 375, 390, 393, 414, 430, 768, 1024, 1280, 1366, 1440, 1536, 1920, 2560] as const;
 const routes = ["/", "/employees", "/attendance", "/payroll", "/exceptions", "/stations", "/products", "/map", "/users", "/audit", "/settings"] as const;
 
 async function assertResponsiveViewport(page: Page, context: string) {
@@ -67,7 +67,7 @@ test("login is usable without iOS auto-zoom at every target width", async ({ pag
 test("authenticated routes do not overflow on mobile, tablet, or desktop", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/login");
-  await page.getByPlaceholder("name@example.com").fill("owner@linoy-designs.example");
+  await page.getByPlaceholder("name@example.com").fill(process.env.SEED_ADMIN_EMAIL ?? "owner@linoy-designs.example");
   await page.getByPlaceholder("הקלדת סיסמה").fill(process.env.SEED_ADMIN_PASSWORD ?? "");
   await page.getByRole("button", { name: "היכנס למערכת", exact: true }).click();
   await expect(page).toHaveURL(/\/$/);
@@ -106,6 +106,7 @@ test("authenticated routes do not overflow on mobile, tablet, or desktop", async
         inputFontSize: Number.parseFloat(getComputedStyle(searchInput).fontSize),
         inputDirection: getComputedStyle(searchInput).direction,
         filterOverflowX: getComputedStyle(filterGroup).overflowX,
+        filterColumns: getComputedStyle(filterGroup).gridTemplateColumns.split(" ").length,
       };
     });
     expect(usersLayout.documentWidth, `/users ${width}px: document overflow`).toBeLessThanOrEqual(usersLayout.viewportWidth);
@@ -123,6 +124,8 @@ test("authenticated routes do not overflow on mobile, tablet, or desktop", async
       current.left < other.right - 1 && current.right > other.left + 1 && current.top < other.bottom - 1 && current.bottom > other.top + 1));
     expect(filtersOverlap, `/users ${width}px: filters overlap`).toBe(false);
     expect(usersLayout.filterOverflowX, `/users ${width}px: filters should not scroll horizontally`).not.toMatch(/auto|scroll/);
+    if (width <= 430) expect(usersLayout.filterColumns, `/users ${width}px: filters must use a clean 2x2 grid`).toBe(2);
+    if (width >= 768 && width <= 900) expect(usersLayout.filterColumns, `/users ${width}px: filters should use four roomy columns`).toBe(4);
     expect(usersLayout.inputDirection, `/users ${width}px: search input must remain RTL`).toBe("rtl");
     if (width <= 900) expect(usersLayout.inputFontSize, `/users ${width}px: search input must prevent Safari auto-zoom`).toBeGreaterThanOrEqual(16);
 
@@ -145,6 +148,30 @@ test("authenticated routes do not overflow on mobile, tablet, or desktop", async
     expect(clearButtonLayout.button.right, `/users ${width}px: clear button escaped search`).toBeLessThanOrEqual(clearButtonLayout.search.right);
     expect(clearButtonLayout.inputPaddingLeft, `/users ${width}px: text is not protected from clear button`).toBeGreaterThanOrEqual(38);
     await page.getByRole("button", { name: "ניקוי החיפוש" }).click();
+
+    await navigateWithinApp(page, "/audit");
+    const activityLayout = await page.evaluate(() => {
+      const viewportWidth = document.documentElement.clientWidth;
+      const selectors = [".activity-page", ".activity-toolbar", ".activity-search", ".activity-filters", ".activity-timeline"];
+      return {
+        viewportWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        boxes: selectors.map(selector => {
+          const element = document.querySelector<HTMLElement>(selector);
+          if (!element) throw new Error(`Missing activity responsive target: ${selector}`);
+          const rect = element.getBoundingClientRect();
+          return { selector, left: rect.left, right: rect.right, width: rect.width };
+        }),
+        rawJsonVisible: document.body.innerText.includes("{\"") || document.body.innerText.includes("passwordHash"),
+      };
+    });
+    expect(activityLayout.documentWidth, `/audit ${width}px: document overflow`).toBeLessThanOrEqual(activityLayout.viewportWidth);
+    for (const rect of activityLayout.boxes) {
+      expect(rect.left, `/audit ${width}px: ${rect.selector} escaped left`).toBeGreaterThanOrEqual(-1);
+      expect(rect.right, `/audit ${width}px: ${rect.selector} escaped right`).toBeLessThanOrEqual(activityLayout.viewportWidth + 1);
+      expect(rect.width, `/audit ${width}px: ${rect.selector} collapsed`).toBeGreaterThan(0);
+    }
+    expect(activityLayout.rawJsonVisible, `/audit ${width}px: raw technical data leaked into normal UI`).toBe(false);
 
     if (width <= 430) {
       await navigateWithinApp(page, "/");
