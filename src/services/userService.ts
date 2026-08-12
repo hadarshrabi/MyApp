@@ -22,4 +22,7 @@ export const userService = {
       reason: active ? "החזרת גישה למשתמש" : "השבתת גישת משתמש",
     });
   },
+  resetPassword(userId: string, password: string) {
+    return apiClient.post<{ success: true }>(`/api/admin/users/${encodeURIComponent(userId)}/password`, { password });
+  },
 };

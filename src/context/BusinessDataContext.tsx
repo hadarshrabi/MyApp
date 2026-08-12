@@ -13,7 +13,7 @@ export type ApiAttendance = {
   station?: { name: string; address?: string; latitude?: number; longitude?: number; allowedRadiusMeters?: number };
   employee?: { user: { displayName: string }; jobPosition: string };
 };
-type AuditView = { id: string; serverTimestamp: string; entityType: string; fieldName: string; originalValue: unknown; newValue: unknown; reason: string; adminUser: { displayName: string } };
+export type AuditView = { id: string; serverTimestamp: string; entityType: string; entityId: string; fieldName: string; originalValue: unknown; newValue: unknown; reason: string; adminUser: { displayName: string } };
 export type UserView = { id: string; email: string; displayName: string; systemRole: "ADMIN" | "EMPLOYEE"; active: boolean; employee: null | { id: string; jobPosition: string; hourlyRateCents: number; assignedStationId: number | null; assignedStation: { name: string } | null } };
 type RawInventory = { quantity: number; active: boolean; product: { id: string; name: string; currentPriceCents: number; active: boolean } };
 type RawStation = { id: number; name: string; address: string; locationDescription?: string | null; latitude: number; longitude: number; allowedRadiusMeters: number; active: boolean; startDate?: string | null; endDate?: string | null; internalNotes?: string | null; archivedAt?: string | null; archivedByAdminId?: string | null; archiveReason?: string | null; inventory?: RawInventory[]; _count?: { employees: number } };

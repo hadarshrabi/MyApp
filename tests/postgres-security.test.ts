@@ -82,6 +82,7 @@ test("EMPLOYEE מקבל 403 בכל נתיבי המנהל", async () => {
     request(app).post("/api/admin/users").send({}),
     request(app).patch("/api/admin/users/user-admin").send({ displayName: "ניסיון אסור" }),
     request(app).post("/api/admin/users/user-admin/status").send({ active: false }),
+    request(app).post("/api/admin/users/user-admin/password").send({ password: "Blocked-Password-2026!" }),
     request(app).get("/api/admin/reports/payroll?from=2026-08-01&to=2026-08-31"),
   ];
   for (const call of calls) assert.equal((await call.set("Authorization", `Bearer ${employeeToken}`)).status, 403);
@@ -582,11 +583,71 @@ test("עריכת סוג זר בעמדה מעדכנת שם מחיר וכמות א
     prisma.product.findUniqueOrThrow({ where: { id: product.id } }),
     prisma.stationInventory.findUniqueOrThrow({ where: { stationId_productId: { stationId: stationA.id, productId: product.id } } }),
     prisma.stationInventory.findUniqueOrThrow({ where: { stationId_productId: { stationId: stationB.id, productId: product.id } } }),
-  ]);
+]);
   assert.equal(storedProduct.name, "זר חג מעודכן");
   assert.equal(storedProduct.currentPriceCents, 9000);
   assert.equal(inventoryA.quantity, 0);
   assert.equal(inventoryB.quantity, 8);
   assert.equal(await prisma.inventoryTransaction.count({ where: { stationId: stationA.id, productId: product.id, transactionType: "MANUAL_ADJUSTMENT", newQuantity: 0 } }), 1);
   assert.equal(await prisma.auditLog.count({ where: { entityId: `${stationA.id}:${product.id}`, fieldName: "quantity" } }), 1);
+});
+
+test("מנהל מאפס סיסמת עובד, מבטל refresh sessions ורושם Audit בטוח", async () => {
+  const oldPassword = "User-Test-Reset-Old-2026!";
+  const newPassword = "User-Test-Reset-New-2026!";
+  const created = await request(app).post("/api/admin/users").set("Authorization", `Bearer ${adminToken}`).send({
+    displayName: "עובד איפוס", email: "user-test-password-reset@example.com", password: oldPassword,
+    systemRole: "EMPLOYEE", jobPosition: "מוכר",
+  });
+  assert.equal(created.status, 201);
+  const userId = created.body.user.id;
+  const loginBefore = await request(app).post("/api/auth/login").send({ email: "user-test-password-reset@example.com", password: oldPassword });
+  assert.equal(loginBefore.status, 200);
+  assert.ok(await prisma.refreshToken.count({ where: { userId, revokedAt: null } }));
+
+  const response = await request(app).post(`/api/admin/users/${userId}/password`).set("Authorization", `Bearer ${adminToken}`).send({ password: newPassword });
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { success: true });
+  assert.doesNotMatch(JSON.stringify(response.body), /password|hash|User-Test/i);
+  assert.equal((await request(app).post("/api/auth/login").send({ email: "user-test-password-reset@example.com", password: oldPassword })).status, 401);
+  assert.equal((await request(app).post("/api/auth/login").send({ email: "user-test-password-reset@example.com", password: newPassword })).status, 200);
+
+  const stored = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { passwordHash: true } });
+  assert.notEqual(stored.passwordHash, newPassword);
+  assert.equal(await bcrypt.compare(newPassword, stored.passwordHash!), true);
+  assert.equal(await prisma.refreshToken.count({ where: { userId, revokedAt: null } }), 1, "only the post-reset login may create a new refresh token");
+  const audit = await prisma.auditLog.findFirstOrThrow({ where: { entityType: "USER", entityId: userId, fieldName: "passwordReset" } });
+  assert.equal(audit.originalValue, null);
+  assert.equal(audit.newValue, null);
+  assert.doesNotMatch(JSON.stringify(audit), /User-Test|passwordHash|Reset-New/i);
+});
+
+test("מנהל מאפס סיסמת מנהל אחר, אך שינוי עצמי נחסם", async () => {
+  const oldPassword = "User-Test-Other-Admin-Old!";
+  const newPassword = "User-Test-Other-Admin-New!";
+  const created = await request(app).post("/api/admin/users").set("Authorization", `Bearer ${adminToken}`).send({
+    displayName: "מנהל נוסף", email: "user-test-other-admin@example.com", password: oldPassword, systemRole: "ADMIN",
+  });
+  assert.equal(created.status, 201);
+  assert.equal((await request(app).post(`/api/admin/users/${created.body.user.id}/password`).set("Authorization", `Bearer ${adminToken}`).send({ password: newPassword })).status, 200);
+  assert.equal((await request(app).post("/api/auth/login").send({ email: "user-test-other-admin@example.com", password: newPassword })).status, 200);
+  assert.equal((await request(app).post("/api/admin/users/user-admin/password").set("Authorization", `Bearer ${adminToken}`).send({ password: "Self-Reset-Blocked-2026!" })).status, 403);
+  assert.equal((await request(app).post("/api/auth/login").send({ email: "owner@linoy-designs.example", password: adminPassword })).status, 200);
+});
+
+test("איפוס סיסמה דורש הזדהות, הרשאת מנהל ומדיניות תקינה ללא דליפה ללוג", async () => {
+  const endpoint = "/api/admin/users/user-admin/password";
+  assert.equal((await request(app).post(endpoint).send({ password: "Valid-But-Unauthenticated-2026!" })).status, 401);
+  assert.equal((await request(app).post(endpoint).set("Authorization", `Bearer ${employeeToken}`).send({ password: "Valid-But-Forbidden-2026!" })).status, 403);
+  const secret = "short";
+  const captured: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { captured.push(args); };
+  try {
+    const weak = await request(app).post("/api/admin/users/user-employee-1/password").set("Authorization", `Bearer ${adminToken}`).send({ password: secret });
+    assert.equal(weak.status, 400);
+  } finally {
+    console.error = originalError;
+  }
+  assert.doesNotMatch(JSON.stringify(captured), new RegExp(secret));
 });
