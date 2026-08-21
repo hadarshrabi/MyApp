@@ -71,6 +71,9 @@ jobs:
       - name: Test application routes
         run: npm run test:routes
 
+      - name: Test unit and realtime behavior
+        run: npm run test:unit
+
       - name: Test PostgreSQL integration and security
         run: npm run test:postgres
 

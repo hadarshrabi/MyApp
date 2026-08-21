@@ -1,5 +1,6 @@
 import prismaClient, { type AttendanceAction, type InventoryTransactionType, type Prisma as PrismaTypes, type UserRole } from "@prisma/client";
 import { prisma as defaultPrisma } from "./prisma";
+import { pairAttendanceShifts, summarizeAttendanceShifts } from "./attendance-shifts";
 
 const { Prisma } = prismaClient;
 type PrismaLike = typeof defaultPrisma;
@@ -252,7 +253,7 @@ export class PostgresRepository {
   }
 
   async getAdminBootstrap() {
-    const [users, stations, products, attendance, audits, sales] = await Promise.all([
+    const [users, stations, products, attendance, audits, sales, attendanceShiftSummary] = await Promise.all([
       this.prisma.user.findMany({
         select: {
           id: true, email: true, displayName: true, systemRole: true, active: true,
@@ -269,8 +270,9 @@ export class PostgresRepository {
         take: 200,
       }),
       this.prisma.sale.findMany({ orderBy: { serverTimestamp: "desc" }, take: 200 }),
+      this.getAttendanceShiftSummary(),
     ]);
-    return { users, stations, products, attendance, audits, sales };
+    return { users, stations, products, attendance, audits, sales, attendanceShiftSummary };
   }
 
   async createManagedUser(input: {
@@ -468,7 +470,7 @@ export class PostgresRepository {
       if (!employee) return null;
 
       const latestAttendance = await tx.attendanceRecord.findFirst({
-        where: { employeeId },
+        where: { employeeId, deletedAt: null },
         orderBy: { serverTimestamp: "desc" },
         select: { action: true },
       });
@@ -516,7 +518,7 @@ export class PostgresRepository {
       this.prisma.attendanceRecord.findMany({
         where: {
           ...(input.employeeId ? { employeeId: input.employeeId } : {}),
-          serverTimestamp: { gte: queryStart, lte: queryEnd },
+          serverTimestamp: { gte: queryStart, lte: queryEnd }, deletedAt: null,
           exceptionStatus: { in: ["NONE", "APPROVED"] },
         },
         include: { station: { select: { id: true, name: true, address: true, locationDescription: true, latitude: true, longitude: true } } },
@@ -576,7 +578,8 @@ export class PostgresRepository {
           shifts.push({
             id: `${clockIn.id}:${record.id}`, employeeId, employeeName: employee.user.displayName, jobPosition: employee.jobPosition,
             date: shiftDate, clockIn: clockIn.serverTimestamp.toISOString(), clockOut: record.serverTimestamp.toISOString(), durationMinutes,
-            hourlyRateCents: employee.hourlyRateCents, salaryCents: Math.round(durationMinutes / 60 * employee.hourlyRateCents),
+            hourlyRateCents: clockIn.hourlyRateCentsAtClockIn ?? employee.hourlyRateCents,
+            salaryCents: Math.round(durationMinutes / 60 * (clockIn.hourlyRateCentsAtClockIn ?? employee.hourlyRateCents)),
             station: { ...clockIn.station, address: clockIn.station.address ?? "", locationDescription: clockIn.station.locationDescription ?? null },
             salesQuantity: shiftSales.reduce((sum, sale) => sum + sale.quantity, 0),
             salesAmountCents: shiftSales.reduce((sum, sale) => sum + sale.totalAmountCents, 0),
@@ -639,20 +642,26 @@ export class PostgresRepository {
       this.prisma.station.findMany({ where: { active: true, archivedAt: null }, select: { id: true, name: true, address: true, locationDescription: true, latitude: true, longitude: true, allowedRadiusMeters: true, active: true, startDate: true, endDate: true }, orderBy: { name: "asc" } }),
     ]);
     if (!station || !employee) return null;
-    const chronological = attendance.filter(record => record.exceptionStatus !== "REJECTED").sort((a, b) => a.serverTimestamp.getTime() - b.serverTimestamp.getTime());
-    let totalMinutes = 0;
-    for (let index = 0; index < chronological.length - 1; index += 1) {
-      if (chronological[index].action === "CLOCK_IN" && chronological[index + 1].action === "CLOCK_OUT") {
-        totalMinutes += Math.max(0, (chronological[index + 1].serverTimestamp.getTime() - chronological[index].serverTimestamp.getTime()) / 60000);
-        index += 1;
-      }
-    }
-    return { station, nearbyStations: [station, ...nearbyStations.filter(item => item.id !== station.id)], attendance, employeeProfile: { ...employee, totalMinutes, estimatedPayCents: Math.round(totalMinutes / 60 * employee.hourlyRateCents) } };
+    const attendanceShiftSummary = await this.getAttendanceShiftSummary(employeeId);
+    return { station, nearbyStations: [station, ...nearbyStations.filter(item => item.id !== station.id)], attendance, attendanceShiftSummary, employeeProfile: { ...employee, totalMinutes: attendanceShiftSummary.summary.totalMinutes, estimatedPayCents: attendanceShiftSummary.summary.totalPayCents } };
+  }
+
+  async getAttendanceShiftSummary(employeeId?: string) {
+    const records = await this.prisma.attendanceRecord.findMany({
+      where: { ...(employeeId ? { employeeId } : {}), deletedAt: null, exceptionStatus: { not: "REJECTED" } },
+      include: {
+        station: { select: { id: true, name: true, address: true, locationDescription: true, latitude: true, longitude: true } },
+        employee: { select: { jobPosition: true, hourlyRateCents: true, user: { select: { displayName: true } } } },
+      },
+      orderBy: [{ employeeId: "asc" }, { serverTimestamp: "asc" }],
+    });
+    const currentMonth = israelDateKey(new Date()).slice(0, 7);
+    return summarizeAttendanceShifts(pairAttendanceShifts(records).filter(shift => shift.date.startsWith(currentMonth)));
   }
 
   async getAttendanceForEmployee(employeeId: string) {
     return this.prisma.attendanceRecord.findMany({
-      where: { employeeId },
+      where: { employeeId, deletedAt: null },
       include: { station: { select: { name: true } } },
       orderBy: { serverTimestamp: "desc" },
       take: 60,
@@ -661,6 +670,7 @@ export class PostgresRepository {
 
   async getAllAttendance() {
     return this.prisma.attendanceRecord.findMany({
+      where: { deletedAt: null },
       include: { employee: { include: { user: { select: { displayName: true } } } }, station: true },
       orderBy: { serverTimestamp: "desc" },
       take: 300,
@@ -672,12 +682,14 @@ export class PostgresRepository {
     gpsAccuracy: number | null; distanceMeters: number; deviceInfo: string | null; exceptional: boolean;
   }) {
     return this.prisma.$transaction(async tx => {
-      const latest = await tx.attendanceRecord.findFirst({ where: { employeeId: input.employeeId }, orderBy: { serverTimestamp: "desc" } });
+      const latest = await tx.attendanceRecord.findFirst({ where: { employeeId: input.employeeId, deletedAt: null }, orderBy: { serverTimestamp: "desc" } });
       if (input.action === "CLOCK_IN" && latest?.action === "CLOCK_IN") throw new ConflictError("כבר קיימת משמרת פעילה");
       if (input.action === "CLOCK_OUT" && latest?.action !== "CLOCK_IN") throw new ConflictError("אין משמרת פעילה לסגירה");
+      const employee = input.action === "CLOCK_IN" ? await tx.employee.findUniqueOrThrow({ where: { id: input.employeeId }, select: { hourlyRateCents: true } }) : null;
       return tx.attendanceRecord.create({
         data: {
           ...input,
+          hourlyRateCentsAtClockIn: employee?.hourlyRateCents ?? null,
           exceptionStatus: input.exceptional ? "PENDING" : "NONE",
           serverTimestamp: new Date(),
         },
@@ -690,6 +702,7 @@ export class PostgresRepository {
     longitude: number; gpsAccuracy?: number | null; distanceMeters: number; reason: string;
   }, adminUserId: string) {
     return this.prisma.$transaction(async tx => {
+      const employee = input.action === "CLOCK_IN" ? await tx.employee.findUniqueOrThrow({ where: { id: input.employeeId }, select: { hourlyRateCents: true } }) : null;
       const record = await tx.attendanceRecord.create({
         data: {
           employeeId: input.employeeId, stationId: input.stationId, action: input.action,
@@ -698,6 +711,7 @@ export class PostgresRepository {
           deviceInfo: "הזנה ידנית בידי מנהל", exceptional: true,
           exceptionStatus: "APPROVED", reviewedByAdminId: adminUserId, reviewedAt: new Date(),
           reviewReason: input.reason,
+          hourlyRateCentsAtClockIn: employee?.hourlyRateCents ?? null,
         },
       });
       await tx.auditLog.create({ data: {
@@ -712,7 +726,7 @@ export class PostgresRepository {
   async correctAttendance(id: string, changes: Record<string, unknown>, adminUserId: string, reason: string) {
     const allowed = ["serverTimestamp", "stationId", "action", "approvedByAdminId", "exceptional"] as const;
     return this.prisma.$transaction(async tx => {
-      const original = await tx.attendanceRecord.findUnique({ where: { id } });
+      const original = await tx.attendanceRecord.findFirst({ where: { id, deletedAt: null } });
       if (!original) return null;
       const data: Record<string, unknown> = {};
       for (const field of allowed) if (field in changes) data[field] = changes[field];
@@ -723,6 +737,85 @@ export class PostgresRepository {
         newValue: toJson(data[field]), adminUserId, reason,
       })) });
       return updated;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
+  async updateAttendanceShift(clockInId: string, input: { clockInAt: Date; clockOutAt: Date | null; stationId: number; reason: string }, adminUserId: string) {
+    return this.prisma.$transaction(async tx => {
+      const clockIn = await tx.attendanceRecord.findFirst({
+        where: { id: clockInId, deletedAt: null },
+        include: { employee: { include: { user: { select: { displayName: true } } } }, station: { select: { name: true } } },
+      });
+      if (!clockIn) return null;
+      if (clockIn.action !== "CLOCK_IN") throw new ConflictError("ניתן לערוך משמרת רק מרשומת הכניסה שלה");
+      const station = await tx.station.findFirst({ where: { id: input.stationId, archivedAt: null }, select: { id: true, name: true } });
+      if (!station) throw new ConflictError("העמדה שנבחרה אינה קיימת או נמצאת בארכיון");
+      const futureLimit = Date.now() + 5 * 60 * 1000;
+      if (input.clockInAt.getTime() > futureLimit || (input.clockOutAt && input.clockOutAt.getTime() > futureLimit)) throw new ConflictError("לא ניתן לשמור שעת נוכחות עתידית");
+      if (input.clockOutAt && input.clockOutAt <= input.clockInAt) throw new ConflictError("שעת היציאה חייבת להיות מאוחרת משעת הכניסה");
+
+      const employeeRecords = await tx.attendanceRecord.findMany({
+        where: { employeeId: clockIn.employeeId, deletedAt: null }, orderBy: { serverTimestamp: "asc" },
+      });
+      const targetIndex = employeeRecords.findIndex(record => record.id === clockIn.id);
+      const next = targetIndex >= 0 ? employeeRecords[targetIndex + 1] : undefined;
+      const clockOut = next?.action === "CLOCK_OUT" ? next : null;
+      if (clockOut && input.clockOutAt === null) throw new ConflictError("לא ניתן להסיר שעת יציאה קיימת דרך עריכת המשמרת");
+
+      const excluded = new Set([clockIn.id, ...(clockOut ? [clockOut.id] : [])]);
+      const remaining = employeeRecords.filter(record => !excluded.has(record.id));
+      const proposedEnd = input.clockOutAt?.getTime() ?? Number.POSITIVE_INFINITY;
+      let otherOpenStart: Date | null = null;
+      for (const record of remaining) {
+        if (record.action === "CLOCK_IN") { otherOpenStart = record.serverTimestamp; continue; }
+        if (!otherOpenStart) continue;
+        const overlaps = input.clockInAt.getTime() < record.serverTimestamp.getTime() && proposedEnd > otherOpenStart.getTime();
+        if (overlaps) throw new ConflictError("השעות שנבחרו חופפות למשמרת קיימת של העובד");
+        otherOpenStart = null;
+      }
+      if (otherOpenStart && proposedEnd > otherOpenStart.getTime()) throw new ConflictError("כבר קיימת משמרת פתוחה או חופפת לעובד");
+
+      const changed = clockIn.serverTimestamp.getTime() !== input.clockInAt.getTime() || clockIn.stationId !== input.stationId ||
+        (clockOut ? clockOut.serverTimestamp.getTime() !== input.clockOutAt!.getTime() || clockOut.stationId !== input.stationId : input.clockOutAt !== null);
+      if (!changed) throw new ConflictError("לא בוצע שינוי בשעות או בעמדה");
+
+      const before = { employeeName: clockIn.employee.user.displayName, clockIn: clockIn.serverTimestamp.toISOString(), clockOut: clockOut?.serverTimestamp.toISOString() ?? null, stationName: clockIn.station.name };
+      await tx.attendanceRecord.update({ where: { id: clockIn.id }, data: { serverTimestamp: input.clockInAt, stationId: input.stationId } });
+      let clockOutId = clockOut?.id ?? null;
+      if (clockOut && input.clockOutAt) {
+        await tx.attendanceRecord.update({ where: { id: clockOut.id }, data: { serverTimestamp: input.clockOutAt, stationId: input.stationId } });
+      } else if (!clockOut && input.clockOutAt) {
+        const created = await tx.attendanceRecord.create({ data: {
+          employeeId: clockIn.employeeId, stationId: input.stationId, action: "CLOCK_OUT", serverTimestamp: input.clockOutAt,
+          latitude: clockIn.latitude, longitude: clockIn.longitude, gpsAccuracy: clockIn.gpsAccuracy, distanceMeters: clockIn.distanceMeters,
+          deviceInfo: "השלמת משמרת בידי מנהל", exceptional: false, exceptionStatus: "APPROVED",
+          reviewedByAdminId: adminUserId, reviewedAt: new Date(), reviewReason: input.reason, approvedByAdminId: adminUserId,
+        } });
+        clockOutId = created.id;
+      }
+      const after = { employeeName: clockIn.employee.user.displayName, clockIn: input.clockInAt.toISOString(), clockOut: input.clockOutAt?.toISOString() ?? null, stationName: station.name };
+      await tx.auditLog.create({ data: { entityType: "ATTENDANCE", entityId: clockIn.id, fieldName: "shiftCorrection", originalValue: before, newValue: after, adminUserId, reason: input.reason } });
+      return { clockInId: clockIn.id, clockOutId };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
+  async softDeleteAttendanceShift(clockInId: string, reason: string, adminUserId: string) {
+    return this.prisma.$transaction(async tx => {
+      const clockIn = await tx.attendanceRecord.findFirst({
+        where: { id: clockInId, deletedAt: null },
+        include: { employee: { include: { user: { select: { displayName: true } } } }, station: { select: { name: true } } },
+      });
+      if (!clockIn) return null;
+      if (clockIn.action !== "CLOCK_IN") throw new ConflictError("ניתן למחוק משמרת רק מרשומת הכניסה שלה");
+      const next = await tx.attendanceRecord.findFirst({
+        where: { employeeId: clockIn.employeeId, deletedAt: null, serverTimestamp: { gt: clockIn.serverTimestamp } }, orderBy: { serverTimestamp: "asc" },
+      });
+      const clockOut = next?.action === "CLOCK_OUT" ? next : null;
+      const deletedAt = new Date();
+      await tx.attendanceRecord.updateMany({ where: { id: { in: [clockIn.id, ...(clockOut ? [clockOut.id] : [])] }, deletedAt: null }, data: { deletedAt } });
+      const snapshot = { employeeName: clockIn.employee.user.displayName, clockIn: clockIn.serverTimestamp.toISOString(), clockOut: clockOut?.serverTimestamp.toISOString() ?? null, stationName: clockIn.station.name };
+      await tx.auditLog.create({ data: { entityType: "ATTENDANCE", entityId: clockIn.id, fieldName: "softDeleted", originalValue: snapshot, newValue: { ...snapshot, deleted: true }, adminUserId, reason } });
+      return { clockInId: clockIn.id, clockOutId: clockOut?.id ?? null, deletedAt };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
@@ -759,7 +852,7 @@ export class PostgresRepository {
   async getAttendanceExceptions(status?: "PENDING" | "APPROVED" | "REJECTED") {
     return this.prisma.attendanceRecord.findMany({
       where: {
-        exceptional: true,
+        exceptional: true, deletedAt: null,
         ...(status ? { exceptionStatus: status } : {}),
       },
       include: {
@@ -779,7 +872,7 @@ export class PostgresRepository {
     reason?: string,
   ) {
     return this.prisma.$transaction(async tx => {
-      const original = await tx.attendanceRecord.findUnique({ where: { id } });
+      const original = await tx.attendanceRecord.findFirst({ where: { id, deletedAt: null } });
       if (!original) return null;
       if (!original.exceptional) throw new ConflictError("רשומת הנוכחות אינה חריגה");
       if (original.exceptionStatus !== "PENDING") throw new ConflictError("חריגת הנוכחות כבר נבדקה");

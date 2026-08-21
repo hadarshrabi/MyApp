@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "./AuthContext";
 import { apiClient } from "../services/apiClient";
+import { createLiveUpdatesClient } from "../services/liveUpdates";
 import type { Employee, Station } from "../types/models";
 
 type ProductView = { id: string; name: string; price: number; count: number; active: boolean; stations: Array<{ stationId: number; name: string; quantity: number; active: boolean }> };
@@ -13,6 +14,17 @@ export type ApiAttendance = {
   station?: { name: string; address?: string; latitude?: number; longitude?: number; allowedRadiusMeters?: number };
   employee?: { user: { displayName: string }; jobPosition: string };
 };
+export type AttendanceShiftView = {
+  id: string; employeeId: string; employeeName: string; jobPosition: string; date: string;
+  clockInId: string; clockOutId: string | null; clockIn: string; clockOut: string | null;
+  durationMinutes: number | null; hourlyRateCents: number; shiftPayCents: number | null;
+  station: { id: number; name: string; address: string; locationDescription?: string | null; latitude: number; longitude: number };
+  status: "OPEN" | "COMPLETED" | "PENDING"; includedInTotals: boolean;
+};
+export type AttendanceShiftSummary = {
+  days: Array<{ date: string; shifts: AttendanceShiftView[]; dailyMinutes: number; dailyPayCents: number }>;
+  summary: { totalShifts: number; totalMinutes: number; totalPayCents: number };
+};
 export type AuditView = { id: string; serverTimestamp: string; entityType: string; entityId: string; fieldName: string; originalValue: unknown; newValue: unknown; reason: string; adminUser: { displayName: string } };
 export type UserView = { id: string; email: string; displayName: string; systemRole: "ADMIN" | "EMPLOYEE"; active: boolean; employee: null | { id: string; jobPosition: string; hourlyRateCents: number; assignedStationId: number | null; assignedStation: { name: string } | null } };
 type RawInventory = { quantity: number; active: boolean; product: { id: string; name: string; currentPriceCents: number; active: boolean } };
@@ -23,6 +35,7 @@ type BusinessValue = {
   attendance: ApiAttendance[]; audits: AuditView[]; users: UserView[];
   employeeInventory: ProductView[];
   employeeProfile?: { hourlyRateCents: number; jobPosition: string; totalMinutes: number; estimatedPayCents: number };
+  attendanceShiftSummary: AttendanceShiftSummary;
 };
 const BusinessDataContext = createContext<BusinessValue | null>(null);
 
@@ -31,14 +44,26 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
   const [raw, setRaw] = useState<any>(null);
   const [loading, setLoading] = useState(Boolean(user));
   const [error, setError] = useState("");
-  async function refresh() {
+  async function loadData(showLoading: boolean) {
     if (!user) { setRaw(null); return; }
-    setLoading(true); setError("");
+    if (showLoading) setLoading(true);
+    setError("");
     try { setRaw(await apiClient.get(isAdmin ? "/api/admin/bootstrap" : "/api/employee/home")); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "לא ניתן לטעון את נתוני המערכת"); }
-    finally { setLoading(false); }
+    finally { if (showLoading) setLoading(false); }
   }
+  async function refresh() { await loadData(true); }
   useEffect(() => { void refresh(); }, [user?.id, isAdmin]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const liveUpdates = createLiveUpdatesClient({
+      getToken: () => apiClient.getStreamToken(),
+      refresh: () => loadData(false),
+    });
+    liveUpdates.start();
+    return () => liveUpdates.stop();
+  }, [user?.id, isAdmin]);
 
   const value = useMemo<BusinessValue>(() => {
     const rawStations: RawStation[] = isAdmin ? raw?.stations ?? [] : raw?.nearbyStations ?? (raw?.station ? [raw.station] : []);
@@ -78,7 +103,7 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
       count: inventoryRows.filter(item => item.product.id === product.id && item.active && item.product.active).reduce((sum, item) => sum + item.quantity, 0),
       stations: (product.stationInventory ?? []).map((item: any) => ({ stationId: item.stationId, name: item.station.name, quantity: item.quantity, active: item.active })),
     }));
-    return { loading, error, refresh, stations, employees, products, attendance, audits: raw?.audits ?? [], users, employeeInventory: products, employeeProfile: raw?.employeeProfile };
+    return { loading, error, refresh, stations, employees, products, attendance, audits: raw?.audits ?? [], users, employeeInventory: products, employeeProfile: raw?.employeeProfile, attendanceShiftSummary: raw?.attendanceShiftSummary ?? { days: [], summary: { totalShifts: 0, totalMinutes: 0, totalPayCents: 0 } } };
   }, [raw, loading, error, isAdmin]);
   return <BusinessDataContext.Provider value={value}>{children}</BusinessDataContext.Provider>;
 }

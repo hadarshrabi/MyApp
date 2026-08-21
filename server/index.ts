@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { createApp } from "./app";
 import { disconnectPrisma } from "./prisma";
+import { liveUpdatesHub } from "./sse";
 
 const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
 const host = process.env.HOST ?? (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -12,6 +13,7 @@ async function shutdown(signal: NodeJS.Signals) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`Received ${signal}; stopping HTTP server`);
+  liveUpdatesHub.shutdown();
 
   const forceShutdown = setTimeout(() => {
     console.error(`Graceful shutdown exceeded ${shutdownTimeoutMs}ms; closing active connections`);

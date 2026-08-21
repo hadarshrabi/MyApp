@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
+import type { LiveUpdates } from "../server/sse";
 
 if (existsSync(".env")) process.loadEnvFile?.(".env");
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
@@ -21,6 +22,7 @@ process.env.APP_ORIGIN = "http://localhost:5173";
 process.env.NODE_ENV = "test";
 
 let app: import("express").Express;
+let createApplication: typeof import("../server/app")["createApp"];
 let prisma: import("@prisma/client").PrismaClient;
 let adminToken = "";
 let employeeToken = "";
@@ -29,6 +31,7 @@ const employeePassword = "Test-Employee-Password-2026!";
 
 before(async () => {
   const modules = await Promise.all([import("../server/app"), import("../server/prisma")]);
+  createApplication = modules[0].createApp;
   app = modules[0].createApp();
   prisma = modules[1].prisma;
   await prisma.user.update({ where: { id: "user-admin" }, data: { passwordHash: await bcrypt.hash(adminPassword, 12) } });
@@ -71,6 +74,8 @@ test("EMPLOYEE מקבל 403 בכל נתיבי המנהל", async () => {
     request(app).get("/api/attendance"),
     request(app).post("/api/attendance/manual").send({}),
     request(app).patch("/api/attendance/other-record").send({}),
+    request(app).patch("/api/admin/attendance/shifts/other-record").send({}),
+    request(app).delete("/api/admin/attendance/shifts/other-record").send({}),
     request(app).post("/api/inventory/adjust").send({}),
     request(app).post("/api/admin/inventory/adjust").send({}),
     request(app).post("/api/admin/stations/1/products").send({}),
@@ -86,6 +91,106 @@ test("EMPLOYEE מקבל 403 בכל נתיבי המנהל", async () => {
     request(app).get("/api/admin/reports/payroll?from=2026-08-01&to=2026-08-31"),
   ];
   for (const call of calls) assert.equal((await call.set("Authorization", `Bearer ${employeeToken}`)).status, 403);
+});
+
+test("ADMIN עורך משמרת אטומית ונוצר Audit עסקי בטוח", async () => {
+  const clockIn = await prisma.attendanceRecord.create({ data: { employeeId: "emp-1", stationId: 1, action: "CLOCK_IN", latitude: 32.07, longitude: 34.79, distanceMeters: 0, serverTimestamp: new Date("2026-08-10T05:00:00.000Z") } });
+  const clockOut = await prisma.attendanceRecord.create({ data: { employeeId: "emp-1", stationId: 1, action: "CLOCK_OUT", latitude: 32.07, longitude: 34.79, distanceMeters: 0, serverTimestamp: new Date("2026-08-10T13:00:00.000Z") } });
+  assert.equal((await request(app).patch(`/api/admin/attendance/shifts/${clockIn.id}`).send({})).status, 401);
+  assert.equal((await request(app).patch(`/api/admin/attendance/shifts/${clockIn.id}`).set("Authorization", `Bearer ${employeeToken}`).send({})).status, 403);
+  const response = await request(app).patch(`/api/admin/attendance/shifts/${clockIn.id}`).set("Authorization", `Bearer ${adminToken}`).send({ clockInAt: "2026-08-10T05:15:00.000Z", clockOutAt: "2026-08-10T13:30:00.000Z", stationId: 1, reason: "תיקון דיווח מאושר" });
+  assert.equal(response.status, 200);
+  assert.equal((await prisma.attendanceRecord.findUniqueOrThrow({ where: { id: clockIn.id } })).serverTimestamp.toISOString(), "2026-08-10T05:15:00.000Z");
+  assert.equal((await prisma.attendanceRecord.findUniqueOrThrow({ where: { id: clockOut.id } })).serverTimestamp.toISOString(), "2026-08-10T13:30:00.000Z");
+  const audit = await prisma.auditLog.findFirstOrThrow({ where: { entityId: clockIn.id, fieldName: "shiftCorrection" } });
+  const serialized = JSON.stringify(audit);
+  assert.doesNotMatch(serialized, /latitude|longitude|deviceInfo|password|token/i);
+  assert.match(serialized, /employeeName|clockIn|clockOut|stationName/);
+});
+
+test("validation דוחה יציאה מוקדמת, חפיפה, עתיד, סיבה חסרה ושינוי ריק", async () => {
+  const clockIn = await prisma.attendanceRecord.create({ data: { employeeId: "emp-1", stationId: 1, action: "CLOCK_IN", latitude: 0, longitude: 0, distanceMeters: 0, serverTimestamp: new Date("2026-08-10T05:00:00.000Z") } });
+  const clockOut = await prisma.attendanceRecord.create({ data: { employeeId: "emp-1", stationId: 1, action: "CLOCK_OUT", latitude: 0, longitude: 0, distanceMeters: 0, serverTimestamp: new Date("2026-08-10T13:00:00.000Z") } });
+  const call = (body: Record<string, unknown>) => request(app).patch(`/api/admin/attendance/shifts/${clockIn.id}`).set("Authorization", `Bearer ${adminToken}`).send(body);
+  assert.equal((await call({ clockInAt: "2026-08-10T10:00:00Z", clockOutAt: "2026-08-10T09:00:00Z", stationId: 1, reason: "בדיקת שעות" })).status, 409);
+  assert.equal((await call({ clockInAt: "2026-08-10T05:00:00Z", clockOutAt: "2026-08-10T13:00:00Z", stationId: 1, reason: "בדיקת ללא שינוי" })).status, 409);
+  assert.equal((await call({ clockInAt: "2099-08-10T05:00:00Z", clockOutAt: "2099-08-10T13:00:00Z", stationId: 1, reason: "בדיקת עתיד" })).status, 409);
+  assert.equal((await call({ clockInAt: "2026-08-10T05:05:00Z", clockOutAt: "2026-08-10T13:00:00Z", stationId: 1, reason: "" })).status, 400);
+  await prisma.attendanceRecord.createMany({ data: [
+    { employeeId: "emp-1", stationId: 1, action: "CLOCK_IN", latitude: 0, longitude: 0, distanceMeters: 0, serverTimestamp: new Date("2026-08-11T05:00:00Z") },
+    { employeeId: "emp-1", stationId: 1, action: "CLOCK_OUT", latitude: 0, longitude: 0, distanceMeters: 0, serverTimestamp: new Date("2026-08-11T13:00:00Z") },
+  ] });
+  assert.equal((await call({ clockInAt: "2026-08-11T06:00:00Z", clockOutAt: "2026-08-11T07:00:00Z", stationId: 1, reason: "בדיקת חפיפה" })).status, 409);
+  assert.ok(await prisma.attendanceRecord.findUnique({ where: { id: clockOut.id } }));
+});
+
+test("Soft Delete שומר את שתי הרשומות אך מוציא אותן מ-bootstrap ומשכר", async () => {
+  const clockIn = await prisma.attendanceRecord.create({ data: { employeeId: "emp-1", stationId: 1, action: "CLOCK_IN", latitude: 0, longitude: 0, distanceMeters: 0, serverTimestamp: new Date("2026-08-12T05:00:00Z") } });
+  const clockOut = await prisma.attendanceRecord.create({ data: { employeeId: "emp-1", stationId: 1, action: "CLOCK_OUT", latitude: 0, longitude: 0, distanceMeters: 0, serverTimestamp: new Date("2026-08-12T13:00:00Z") } });
+  const before = await request(app).get("/api/admin/reports/payroll?from=2026-08-12&to=2026-08-12").set("Authorization", `Bearer ${adminToken}`);
+  assert.equal(before.status, 200);
+  assert.ok(before.body.shifts.some((shift: { id: string }) => shift.id.includes(clockIn.id)));
+  const deleted = await request(app).delete(`/api/admin/attendance/shifts/${clockIn.id}`).set("Authorization", `Bearer ${adminToken}`).send({ reason: "דיווח כפול שנמחק", confirmation: true });
+  assert.equal(deleted.status, 200);
+  assert.ok((await prisma.attendanceRecord.findUniqueOrThrow({ where: { id: clockIn.id } })).deletedAt);
+  assert.ok((await prisma.attendanceRecord.findUniqueOrThrow({ where: { id: clockOut.id } })).deletedAt);
+  const bootstrap = await request(app).get("/api/admin/bootstrap").set("Authorization", `Bearer ${adminToken}`);
+  assert.ok(!bootstrap.body.attendance.some((record: { id: string }) => record.id === clockIn.id || record.id === clockOut.id));
+  const after = await request(app).get("/api/admin/reports/payroll?from=2026-08-12&to=2026-08-12").set("Authorization", `Bearer ${adminToken}`);
+  assert.ok(!after.body.shifts.some((shift: { id: string }) => shift.id.includes(clockIn.id)));
+  const audit = await prisma.auditLog.findFirstOrThrow({ where: { entityId: clockIn.id, fieldName: "softDeleted" } });
+  assert.doesNotMatch(JSON.stringify(audit), /latitude|longitude|deviceInfo|password|token/i);
+});
+
+test("SSE משודר רק לאחר transaction מוצלח של ניהול משמרת", async () => {
+  let broadcasts = 0;
+  const liveUpdates: LiveUpdates = { createStreamToken: () => "token", consumeStreamToken: () => null, subscribe: () => null, broadcastChange: () => { broadcasts += 1; return 0; }, shutdown: () => {} };
+  const broadcastApp = createApplication(undefined, liveUpdates);
+  const clockIn = await prisma.attendanceRecord.create({ data: { employeeId: "emp-1", stationId: 1, action: "CLOCK_IN", latitude: 0, longitude: 0, distanceMeters: 0, serverTimestamp: new Date("2026-08-13T05:00:00Z") } });
+  const failed = await request(broadcastApp).delete(`/api/admin/attendance/shifts/${clockIn.id}`).set("Authorization", `Bearer ${adminToken}`).send({ reason: "", confirmation: true });
+  assert.equal(failed.status, 400); assert.equal(broadcasts, 0);
+  const succeeded = await request(broadcastApp).delete(`/api/admin/attendance/shifts/${clockIn.id}`).set("Authorization", `Bearer ${adminToken}`).send({ reason: "דיווח כפול מאומת", confirmation: true });
+  assert.equal(succeeded.status, 200); assert.equal(broadcasts, 1);
+});
+
+test("stream token requires authentication and an active user", async () => {
+  assert.equal((await request(app).post("/api/stream/token").send({})).status, 401);
+  const allowed = await request(app).post("/api/stream/token").set("Authorization", `Bearer ${adminToken}`).send({});
+  assert.equal(allowed.status, 200);
+  assert.equal(typeof allowed.body.token, "string");
+  assert.equal(allowed.headers["cache-control"], "no-store");
+
+  await prisma.user.update({ where: { id: "user-employee-1" }, data: { active: false } });
+  try {
+    assert.equal((await request(app).post("/api/stream/token").set("Authorization", `Bearer ${employeeToken}`).send({})).status, 401);
+  } finally {
+    await prisma.user.update({ where: { id: "user-employee-1" }, data: { active: true } });
+  }
+});
+
+test("only successful authenticated mutations broadcast a generic change", async () => {
+  let broadcasts = 0;
+  const liveUpdates: LiveUpdates = {
+    createStreamToken: () => "test-token",
+    consumeStreamToken: () => null,
+    subscribe: () => null,
+    broadcastChange: () => { broadcasts += 1; return 0; },
+    shutdown: () => {},
+  };
+  const broadcastApp = createApplication(undefined, liveUpdates);
+  const failed = await request(broadcastApp).post("/api/admin/inventory/adjust").set("Authorization", `Bearer ${adminToken}`).send({});
+  assert.equal(failed.status, 400);
+  assert.equal(broadcasts, 0);
+
+  const succeeded = await request(broadcastApp).post("/api/admin/inventory/adjust").set("Authorization", `Bearer ${adminToken}`).send({
+    stationId: 1,
+    productId: "product-white-roses",
+    quantityDelta: 1,
+    transactionType: "STOCK_DELIVERY",
+    reason: "בדיקת שידור לאחר mutation מוצלח",
+  });
+  assert.equal(succeeded.status, 201);
+  assert.equal(broadcasts, 1);
 });
 
 test("מנהל יוצר עובד אמיתי עם סיסמה מוצפנת ורישום ביקורת", async () => {
