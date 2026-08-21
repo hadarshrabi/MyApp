@@ -46,6 +46,10 @@ export const apiClient = {
     if (!(await refreshAccessToken())) return null;
     return request<{ user: ApiUser }>("/api/me", {}, false);
   },
+  async getStreamToken() {
+    const payload = await request<{ token: string }>("/api/stream/token", { method: "POST", body: "{}" });
+    return payload.token;
+  },
 };
 
 export type ApiUser = {

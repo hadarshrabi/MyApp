@@ -6,11 +6,12 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { ZodError, type ZodType } from "zod";
 import { PostgresRepository, ConflictError, ForbiddenError } from "./postgres-repository";
-import { attendanceApprovalDto, attendanceCorrectionDto, attendanceRejectionDto, clockDto, createManagedUserDto, createProductDto, createStationDto, duplicateStationDto, employeeStationAssignmentDto, inventoryAdjustmentDto, loginDto, managedUserPasswordDto, managedUserStatusDto, manualAttendanceDto, payrollReportQueryDto, saleDto, stationArchiveDto, stationPermanentDeleteDto, stationProductAdjustmentDto, stationProductDetailsDto, stationProductDto, stationProductRemovalDto, stationRestoreDto, stationStatusDto, updateManagedUserDto, updateProductDto, updateStationDto } from "./validation";
+import { attendanceApprovalDto, attendanceCorrectionDto, attendanceRejectionDto, attendanceShiftDeleteDto, attendanceShiftUpdateDto, clockDto, createManagedUserDto, createProductDto, createStationDto, duplicateStationDto, employeeStationAssignmentDto, inventoryAdjustmentDto, loginDto, managedUserPasswordDto, managedUserStatusDto, manualAttendanceDto, payrollReportQueryDto, saleDto, stationArchiveDto, stationPermanentDeleteDto, stationProductAdjustmentDto, stationProductDetailsDto, stationProductDto, stationProductRemovalDto, stationRestoreDto, stationStatusDto, updateManagedUserDto, updateProductDto, updateStationDto } from "./validation";
 import { createAccessToken, hashPassword, hashRefreshToken, newRefreshToken, newTokenFamily, refreshCookie, refreshExpiry, verifyPassword } from "./auth";
 import { requireActiveUser, requireAdmin, requireAuth } from "./middleware/auth";
+import { liveUpdatesHub, type LiveUpdates } from "./sse";
 
-export function createApp(repository = new PostgresRepository()) {
+export function createApp(repository = new PostgresRepository(), liveUpdates: LiveUpdates = liveUpdatesHub) {
   const app = express();
   const allowedOrigin = process.env.APP_ORIGIN;
   if (!allowedOrigin) throw new Error("APP_ORIGIN is required");
@@ -81,8 +82,29 @@ export function createApp(repository = new PostgresRepository()) {
     return response.status(204).send();
   }));
 
+  app.get("/api/stream", asyncRoute(async (request, response) => {
+    const token = typeof request.query.token === "string" ? request.query.token : null;
+    const userId = liveUpdates.consumeStreamToken(token);
+    if (!userId) return response.status(401).json({ error: "אסימון הזרם אינו תקין" });
+    if (!liveUpdates.subscribe(response, userId)) return response.status(429).json({ error: "מספר חיבורי העדכון הפעילים גבוה מדי" });
+  }));
+
   app.use("/api", requireAuth);
   app.use("/api", requireActiveUser(repository));
+  app.post("/api/stream/token", asyncRoute(async (request, response) => {
+    const token = liveUpdates.createStreamToken(request.auth!.userId);
+    response.setHeader("Cache-Control", "no-store");
+    return response.json({ token });
+  }));
+  app.use("/api", (request, response, next) => {
+    if (["POST", "PATCH", "DELETE"].includes(request.method)) {
+      response.once("finish", () => {
+        if (response.statusCode >= 200 && response.statusCode < 300) liveUpdates.broadcastChange();
+      });
+    }
+    next();
+  });
+
   app.get("/api/me", asyncRoute(async (request, response) => {
     const user = await repository.findUserById(request.auth!.userId);
     return user ? response.json({ user: publicUser(user) }) : response.status(401).json({ error: "המשתמש אינו פעיל" });
@@ -261,12 +283,21 @@ export function createApp(repository = new PostgresRepository()) {
     const record = await repository.correctAttendance(String(request.params.id), request.body.changes, request.auth!.userId, request.body.reason);
     return record ? response.json({ record }) : response.status(404).json({ error: "רשומת הנוכחות לא נמצאה" });
   }));
+  app.patch("/api/admin/attendance/shifts/:clockInId", requireAdmin, validate(attendanceShiftUpdateDto), asyncRoute(async (request, response) => {
+    const shift = await repository.updateAttendanceShift(String(request.params.clockInId), request.body, request.auth!.userId);
+    return shift ? response.json({ shift }) : response.status(404).json({ error: "המשמרת לא נמצאה" });
+  }));
+  app.delete("/api/admin/attendance/shifts/:clockInId", requireAdmin, validate(attendanceShiftDeleteDto), asyncRoute(async (request, response) => {
+    const shift = await repository.softDeleteAttendanceShift(String(request.params.clockInId), request.body.reason, request.auth!.userId);
+    return shift ? response.json({ shift }) : response.status(404).json({ error: "המשמרת לא נמצאה" });
+  }));
   app.post("/api/sales", validate(saleDto), asyncRoute(async (request, response) => {
     const auth = request.auth!;
     if (!auth.employeeId) return response.status(403).json({ error: "אין הרשאה לדווח מכירה" });
     const assignment = await repository.getEmployeeAssignment(auth.employeeId);
     if (!assignment?.assignedStationId) return response.status(403).json({ error: "העובד אינו משויך לעמדה פעילה" });
-    return response.status(201).json({ sale: await repository.createSaleAtomic({ ...request.body, employeeId: auth.employeeId, stationId: assignment.assignedStationId }) });
+    const sale = await repository.createSaleAtomic({ ...request.body, employeeId: auth.employeeId, stationId: assignment.assignedStationId });
+    return response.status(201).json({ sale });
   }));
   app.post("/api/inventory/adjust", requireAdmin, validate(inventoryAdjustmentDto), asyncRoute(async (request, response) => response.status(201).json({ transaction: await repository.adjustInventory(request.body, request.auth!.userId) })));
   app.post("/api/admin/inventory/adjust", requireAdmin, validate(inventoryAdjustmentDto), asyncRoute(async (request, response) => response.status(201).json({ transaction: await repository.adjustInventory(request.body, request.auth!.userId) })));

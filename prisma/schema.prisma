@@ -141,6 +141,8 @@ model AttendanceRecord {
   reviewedAt        DateTime?
   reviewReason      String?
   approvedByAdminId String?
+  deletedAt          DateTime?
+  hourlyRateCentsAtClockIn Int?
   createdAt         DateTime         @default(now())
   employee          Employee         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   station           Station          @relation(fields: [stationId], references: [id], onDelete: Restrict)
@@ -150,6 +152,7 @@ model AttendanceRecord {
   @@index([employeeId, serverTimestamp])
   @@index([stationId, serverTimestamp])
   @@index([exceptionStatus, serverTimestamp])
+  @@index([deletedAt, employeeId, serverTimestamp])
 }
 
 model Sale {

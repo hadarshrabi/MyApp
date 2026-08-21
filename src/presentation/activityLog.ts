@@ -36,6 +36,7 @@ const fieldLabels: Record<string, string> = {
   hourlyRateCents: "שכר שעתי", assignedStationId: "עמדה", active: "סטטוס",
   quantity: "כמות במלאי", name: "שם", currentPriceCents: "מחיר", price: "מחיר",
   serverTimestamp: "מועד", stationId: "עמדה", action: "סוג דיווח",
+  clockIn: "כניסה", clockOut: "יציאה", stationName: "עמדה",
   exceptional: "דיווח חריג", exceptionStatus: "סטטוס חריגה",
 };
 
@@ -85,7 +86,7 @@ function safeChanges(record: AuditRecord): ActivityChange[] {
 
 function valueName(value: unknown): string | undefined {
   const record = object(value);
-  return typeof record?.displayName === "string" ? record.displayName : typeof record?.name === "string" ? record.name : undefined;
+  return typeof record?.displayName === "string" ? record.displayName : typeof record?.employeeName === "string" ? record.employeeName : typeof record?.name === "string" ? record.name : undefined;
 }
 
 function resolveTarget(record: AuditRecord, resolvers: ActivityResolvers): string | undefined {
@@ -113,6 +114,7 @@ function description(record: AuditRecord): string {
     "USER:passwordReset": "איפס את הסיסמה של המשתמש",
     "EMPLOYEE:assignedStationId": "שינה את העמדה של העובד",
     "ATTENDANCE:record": "הוסיף רישום נוכחות", "ATTENDANCE:exceptionStatus": "עדכן חריגת נוכחות",
+    "ATTENDANCE:shiftCorrection": "עדכן את שעות הנוכחות של", "ATTENDANCE:softDeleted": "מחק את רשומת הנוכחות של",
     "STATION:created": "הוסיף עמדה חדשה", "STATION:station": "עדכן את פרטי העמדה",
     "STATION:archivedAt": object(record.newValue)?.archivedAt ? "העביר עמדה לארכיון" : "שחזר עמדה מהארכיון",
     "STATION:permanentlyDeleted": "מחק עמדה לצמיתות", "STATION:duplicatedFrom": "שכפל עמדה",

@@ -15,6 +15,16 @@ export const attendanceCorrectionDto = z.object({
     action: z.enum(["CLOCK_IN", "CLOCK_OUT"]).optional(), exceptional: z.boolean().optional(), approvedByAdminId: z.string().uuid().nullable().optional(),
   }).strict(),
 }).strict();
+export const attendanceShiftUpdateDto = z.object({
+  clockInAt: z.coerce.date(),
+  clockOutAt: z.coerce.date().nullable(),
+  stationId: z.number().int().positive(),
+  reason: z.string().trim().min(5).max(500),
+}).strict();
+export const attendanceShiftDeleteDto = z.object({
+  reason: z.string().trim().min(5).max(500),
+  confirmation: z.literal(true),
+}).strict();
 export const manualAttendanceDto = z.object({
   employeeId: z.string().min(1), stationId: z.number().int().positive(), action: z.enum(["CLOCK_IN", "CLOCK_OUT"]),
   timestamp: z.coerce.date(), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180),
