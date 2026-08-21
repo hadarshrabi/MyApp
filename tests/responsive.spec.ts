@@ -46,6 +46,43 @@ async function navigateWithinApp(page: Page, route: string) {
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 }
 
+async function createAttendanceShiftFixture(page: Page) {
+  const email = process.env.SEED_ADMIN_EMAIL ?? "owner@linoy-designs.example";
+  const password = process.env.SEED_ADMIN_PASSWORD ?? "";
+  const loginResponse = await page.request.post("/api/auth/login", { data: { email, password } });
+  expect(loginResponse.ok(), "responsive fixture admin login failed").toBe(true);
+  const { accessToken } = await loginResponse.json() as { accessToken: string };
+  const headers = { authorization: `Bearer ${accessToken}` };
+  const bootstrapResponse = await page.request.get("/api/bootstrap", { headers });
+  expect(bootstrapResponse.ok(), "responsive fixture bootstrap failed").toBe(true);
+  const bootstrap = await bootstrapResponse.json() as {
+    employees: Array<{ id: string; assignedStationId: number | null }>;
+    stations: Array<{ id: number }>;
+  };
+  const employee = bootstrap.employees.find(candidate => candidate.assignedStationId != null) ?? bootstrap.employees[0];
+  const stationId = employee?.assignedStationId ?? bootstrap.stations[0]?.id;
+  expect(employee, "responsive fixture requires a seeded employee").toBeTruthy();
+  expect(stationId, "responsive fixture requires a seeded station").toBeTruthy();
+
+  const clockOut = new Date(Date.now() - 60 * 60 * 1000);
+  const clockIn = new Date(clockOut.getTime() - 60 * 60 * 1000);
+  const base = {
+    employeeId: employee!.id,
+    stationId: stationId!,
+    latitude: 32.0743,
+    longitude: 34.7925,
+    distanceMeters: 0,
+    reason: "נתוני בדיקת רספונסיביות",
+  };
+  for (const [action, timestamp] of [["CLOCK_IN", clockIn], ["CLOCK_OUT", clockOut]] as const) {
+    const response = await page.request.post("/api/attendance/manual", {
+      headers,
+      data: { ...base, action, timestamp: timestamp.toISOString() },
+    });
+    expect(response.ok(), `responsive fixture ${action} failed`).toBe(true);
+  }
+}
+
 test("login is usable without iOS auto-zoom at every target width", async ({ page }) => {
   for (const width of viewports) {
     await page.setViewportSize({ width, height: width <= 430 ? 700 : 900 });
@@ -192,6 +229,7 @@ test("authenticated routes do not overflow on mobile, tablet, or desktop", async
 test("attendance edit sheet stays inside every mobile and tablet viewport", async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 390, height: 844 });
+  await createAttendanceShiftFixture(page);
   await page.goto("/login");
   await page.getByPlaceholder("name@example.com").fill(process.env.SEED_ADMIN_EMAIL ?? "owner@linoy-designs.example");
   await page.getByPlaceholder("הקלדת סיסמה").fill(process.env.SEED_ADMIN_PASSWORD ?? "");
