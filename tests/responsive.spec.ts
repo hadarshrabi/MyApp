@@ -56,10 +56,11 @@ async function createAttendanceShiftFixture(page: Page) {
   const bootstrapResponse = await page.request.get("/api/admin/bootstrap", { headers });
   expect(bootstrapResponse.ok(), "responsive fixture bootstrap failed").toBe(true);
   const bootstrap = await bootstrapResponse.json() as {
-    employees: Array<{ id: string; assignedStationId: number | null }>;
+    users: Array<{ employee: { id: string; assignedStationId: number | null } | null }>;
     stations: Array<{ id: number }>;
   };
-  const employee = bootstrap.employees.find(candidate => candidate.assignedStationId != null) ?? bootstrap.employees[0];
+  const employees = bootstrap.users.flatMap(user => user.employee ? [user.employee] : []);
+  const employee = employees.find(candidate => candidate.assignedStationId != null) ?? employees[0];
   const stationId = employee?.assignedStationId ?? bootstrap.stations[0]?.id;
   expect(employee, "responsive fixture requires a seeded employee").toBeTruthy();
   expect(stationId, "responsive fixture requires a seeded station").toBeTruthy();
