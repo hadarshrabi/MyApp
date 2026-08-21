@@ -53,7 +53,7 @@ async function createAttendanceShiftFixture(page: Page) {
   expect(loginResponse.ok(), "responsive fixture admin login failed").toBe(true);
   const { accessToken } = await loginResponse.json() as { accessToken: string };
   const headers = { authorization: `Bearer ${accessToken}` };
-  const bootstrapResponse = await page.request.get("/api/bootstrap", { headers });
+  const bootstrapResponse = await page.request.get("/api/admin/bootstrap", { headers });
   expect(bootstrapResponse.ok(), "responsive fixture bootstrap failed").toBe(true);
   const bootstrap = await bootstrapResponse.json() as {
     employees: Array<{ id: string; assignedStationId: number | null }>;
